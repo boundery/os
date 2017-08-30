@@ -51,7 +51,19 @@ ifeq ($(shell test $(NARCHS) -gt 1; echo $$?),0)
 $(error Trying to build multiple architectures: $(ARCHS))
 endif
 
-#XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
+#################################
+# Detect cache, and set env vars.
+
+CACHE_CONTAINER=apt-cacher-ng
+PROXY_PORT=3142
+PROXY_IP=$(shell docker inspect --format '{{.NetworkSettings.IPAddress}}' $(CACHE_CONTAINER) 2>/dev/null)
+ifneq ($(PROXY_IP),)
+export http_proxy=http://$(PROXY_IP):$(PROXY_PORT)
+export https_proxy=http://$(PROXY_IP):$(PROXY_PORT)
+endif
+
+test_cache:
+	@printenv | egrep '^http[s]?_proxy='
 
 #########################
 # Setup some directories.
@@ -61,13 +73,13 @@ SCRIPTDIR := $(SRCDIR)/script
 KCONFIGDIR := $(SRCDIR)/kconfig
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
-CACHEDIR := $(SRCDIR)/build/cache
 ROOTFSDIR := $(BUILDDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
 
 ###########################
 #Validate some assumptions.
 
+#XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
 #XXX new enough qemu, cross tools, etc.
 
 #########
@@ -76,10 +88,6 @@ KERNELDIR := $(BUILDDIR)/linux
 PHONY += buildinfo
 buildinfo:
 	@echo Foo: $(ARCH) $(QEMU_ARCH) $(SRCDIR) $(BUILDDIR)
-
-PHONY += cache_clean
-cache_clean:
-	@rm -rf $(CACHEDIR)
 
 PHONY += all-clean
 all_clean:
@@ -93,7 +101,7 @@ KERNEL_SRC := $(KERNELDIR)/Makefile
 kernel_src: $(KERNEL_SRC)
 $(KERNEL_SRC):
 	@mkdir -p $(BUILDDIR)
-	#XXX Just pull the .tar.xz from kernel.org?
+	#XXX Just pull the .tar.xz from kernel.org?  It is smaller...
 	git clone --branch=$(KERNEL_VER) --depth=1 $(KERNEL_GIT) $(KERNELDIR)
 
 KERNEL_PATCH := $(KERNELDIR)/.config
@@ -110,8 +118,6 @@ ROOTFS_STAGE1 := $(ROOTFSDIR)/etc/apt/sources.list
 rootfs_stage1: $(ROOTFS_STAGE1)
 $(ROOTFS_STAGE1):
 	@mkdir -p $(ROOTFSDIR)
-	@mkdir -p $(CACHEDIR)/debootstrap
-	CACHEDIR=$(CACHEDIR)/debootstrap PATH=$(SCRIPTDIR):$(PATH) \
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(SCRIPTDIR)/mkdebroot -a $(ARCH) $(DEBIAN_RELEASE) $(ROOTFSDIR)
 
