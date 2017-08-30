@@ -46,7 +46,10 @@ if [ ! -d "$2" ]; then
 fi
 DIR="$2"
 
-debootstrap --foreign --variant=minbase --arch=$ARCH "$REL" "$DIR" "$MIRROR"
+if ! debootstrap --foreign --variant=minbase --arch=$ARCH "$REL" "$DIR" "$MIRROR"; then
+    echo debootstrap failed! >&2
+    exit 10
+fi
 
 cut -c5- <<EOF >$DIR/debootstrap/finish
     #!/bin/sh
