@@ -67,6 +67,7 @@ cut -c5- <<EOF >$DIR/debootstrap/finish
 EOF
 chmod a+x $DIR/debootstrap/finish
 
+mkdir -p $DIR/etc/network
 cut -c5- <<EOF >$DIR/etc/network/interfaces
     auto eth0
     iface eth0 inet dhcp
