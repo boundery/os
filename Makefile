@@ -8,6 +8,8 @@
 #XXX Do we even need to cross build anything other than containers?  How
 #    valuable is the seperation between build env and run env provided by .deb?
 
+#XXX Check signatures for HTTP downloads!
+
 DEBIAN_RELEASE := stretch
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
