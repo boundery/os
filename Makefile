@@ -1,7 +1,7 @@
 ######################################################
 # Setup some high-level global settings.
 
-#XXX Need targets for checking for debian/kernel security vulns, respin image.
+#XXX Need targets for checking for debian and kernel security vulns, respin image.
 
 #XXX Add support for (cross) building patched upstream, patched tar.gz, and
 #    and local git trees.  Perhaps a list of things to build in ../?
@@ -11,8 +11,7 @@
 DEBIAN_RELEASE := stretch
 KERNEL_VER := v4.9 #Stretch kernel.
 
-KERNEL_GIT=https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux-2.6.git
-
+KERNEL_URL=https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
 ######################################################
 # Pick/validate what target architectures we're building for.
 
@@ -100,9 +99,8 @@ clean:
 KERNEL_SRC := $(KERNELDIR)/Makefile
 kernel_src: $(KERNEL_SRC)
 $(KERNEL_SRC):
-	@mkdir -p $(BUILDDIR)
-	#XXX Just pull the .tar.xz from kernel.org?  It is smaller...
-	git clone --branch=$(KERNEL_VER) --depth=1 $(KERNEL_GIT) $(KERNELDIR)
+	@mkdir -p $(KERNELDIR)
+	wget -qO- $(KERNEL_URL) | tar --strip-components=1 -xJ -C $(KERNELDIR)
 
 KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
