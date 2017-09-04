@@ -9,9 +9,9 @@
 #    valuable is the seperation between build env and run env provided by .deb?
 
 DEBIAN_RELEASE := stretch
-KERNEL_VER := v4.9 #Stretch kernel.
 
-KERNEL_URL=https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
+KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
+
 ######################################################
 # Pick/validate what target architectures we're building for.
 
@@ -58,7 +58,6 @@ PROXY_PORT=3142
 PROXY_IP=$(shell docker inspect --format '{{.NetworkSettings.IPAddress}}' $(CACHE_CONTAINER) 2>/dev/null)
 ifneq ($(PROXY_IP),)
 export http_proxy=http://$(PROXY_IP):$(PROXY_PORT)
-export https_proxy=http://$(PROXY_IP):$(PROXY_PORT)
 endif
 
 test_cache:
