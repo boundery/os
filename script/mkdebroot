@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#XXX Allow appending more --include packages.
+
 #XXX Make these options!
 MIRROR="http://ftp.debian.org/debian/"
 
@@ -46,7 +48,7 @@ if [ ! -d "$2" ]; then
 fi
 DIR="$2"
 
-if ! debootstrap --foreign --variant=minbase --arch=$ARCH "$REL" "$DIR" "$MIRROR"; then
+if ! debootstrap --foreign --variant=minbase --include=debian-archive-keyring --arch=$ARCH "$REL" "$DIR" "$MIRROR"; then
     echo debootstrap failed! >&2
     exit 10
 fi
