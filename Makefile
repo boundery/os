@@ -13,6 +13,7 @@
 DEBIAN_RELEASE := stretch
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
+QEMU_URL=http://download.qemu-project.org/qemu-2.10.0.tar.xz
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -75,12 +76,14 @@ KCONFIGDIR := $(SRCDIR)/kconfig
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
+QEMUDIR := $(BUILDDIR)/qemu
 
 ###########################
 #Validate some assumptions.
 
 #XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
-#XXX new enough qemu, cross tools, etc.
+#XXX Make sure qemu builddeps are installed.
+#XXX new enough cross tools, etc.
 
 #########
 # Targets
@@ -113,6 +116,17 @@ kernel: $(KERNEL)
 $(KERNEL): $(KERNEL_PATCH)
 	( cd $(KERNELDIR); make ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) zImage dtbs )
 
+QEMU_SRC := $(QEMUDIR)/configure
+qemu_src: $(QEMU_SRC)
+$(QEMU_SRC):
+	@mkdir -p $(QEMUDIR)
+	wget -qO- $(QEMU_URL) | tar --strip-components=1 -xJ -C $(QEMUDIR)
+
+QEMU := $(QEMUDIR)/$(QEMU_ARCH)-softmmu/qemu-system-$(QEMU_ARCH)
+qemu: $(QEMU)
+$(QEMU): $(QEMU_SRC)
+	( cd $(QEMUDIR); ./configure --target-list=$(QEMU_ARCH)-softmmu; make )
+
 ROOTFS_STAGE1 := $(ROOTFSDIR)/etc/apt/sources.list
 rootfs_stage1: $(ROOTFS_STAGE1)
 $(ROOTFS_STAGE1):
@@ -122,9 +136,9 @@ $(ROOTFS_STAGE1):
 
 ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
 rootfs_stage2: $(ROOTFS_STAGE2)
-$(ROOTFS_STAGE2): $(ROOTFS_STAGE1) $(KERNEL)
+$(ROOTFS_STAGE2): $(ROOTFS_STAGE1) $(QEMU) $(KERNEL)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  qemu-system-arm -M virt -m 1024 -kernel $(KERNELDIR)/arch/arm/boot/zImage \
+	  $(QEMU) -M virt -m 1024 -kernel $(KERNELDIR)/arch/arm/boot/zImage \
 	  -fsdev local,id=r,path=$(ROOTFSDIR),security_model=passthrough \
 	  -device virtio-9p-pci,fsdev=r,mount_tag=/dev/root \
 	  -append "root=/dev/root rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L,msize=262144,cache=loose console=ttyAMA0,115200 panic=1 init=/debootstrap/finish" \
