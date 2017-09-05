@@ -55,14 +55,15 @@ fi
 
 cut -c5- <<EOF >$DIR/debootstrap/finish
     #!/bin/sh
-    mount -t proc proc /proc
-    mount -t sysfs sys /sys
-    #/bin/bash
-    /debootstrap/debootstrap --second-stage
-    rm -f $DIR/var/cache/apt/archives/partial/*.deb
-    rm -f $DIR/var/cache/apt/archives/*.deb
-    echo "root:badpass" | chpasswd #XXX Temporary.
+
+    mount -t proc proc /proc &&
+    mount -t sysfs sys /sys &&
+    /debootstrap/debootstrap --second-stage &&
+    rm -f $DIR/var/cache/apt/archives/partial/*.deb &&
+    rm -f $DIR/var/cache/apt/archives/*.deb &&
+    echo "root:badpass" | chpasswd &&
     touch /etc/.image_finished
+
     sync #We panic the guest kernel to exit, so make sure cache is flushed.
 EOF
 chmod a+x $DIR/debootstrap/finish
