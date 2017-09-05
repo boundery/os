@@ -114,7 +114,7 @@ $(KERNEL_PATCH): $(KERNEL_SRC)
 KERNEL := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/zImage
 kernel: $(KERNEL)
 $(KERNEL): $(KERNEL_PATCH)
-	( cd $(KERNELDIR); make ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) zImage dtbs )
+	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) zImage dtbs )
 
 QEMU_SRC := $(QEMUDIR)/configure
 qemu_src: $(QEMU_SRC)
@@ -125,7 +125,7 @@ $(QEMU_SRC):
 QEMU := $(QEMUDIR)/$(QEMU_ARCH)-softmmu/qemu-system-$(QEMU_ARCH)
 qemu: $(QEMU)
 $(QEMU): $(QEMU_SRC)
-	( cd $(QEMUDIR); ./configure --target-list=$(QEMU_ARCH)-softmmu; make )
+	( cd $(QEMUDIR); ./configure --target-list=$(QEMU_ARCH)-softmmu; $(MAKE) )
 
 ROOTFS_STAGE1 := $(ROOTFSDIR)/etc/apt/sources.list
 rootfs_stage1: $(ROOTFS_STAGE1)
