@@ -116,6 +116,11 @@ kernel: $(KERNEL)
 $(KERNEL): $(KERNEL_PATCH)
 	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) zImage dtbs )
 
+PHONY += kernel_clean
+kernel_clean:
+	rm -rf $(KERNELDIR)
+
+#Need a newer qemu that has working VirtFS.
 QEMU_SRC := $(QEMUDIR)/configure
 qemu_src: $(QEMU_SRC)
 $(QEMU_SRC):
@@ -126,6 +131,10 @@ QEMU := $(QEMUDIR)/$(QEMU_ARCH)-softmmu/qemu-system-$(QEMU_ARCH)
 qemu: $(QEMU)
 $(QEMU): $(QEMU_SRC)
 	( cd $(QEMUDIR); ./configure --target-list=$(QEMU_ARCH)-softmmu; $(MAKE) )
+
+PHONY += qemu_clean
+qemu_clean:
+	rm -rf $(QEMUDIR)
 
 ROOTFS_STAGE1 := $(ROOTFSDIR)/etc/apt/sources.list
 rootfs_stage1: $(ROOTFS_STAGE1)
@@ -145,6 +154,10 @@ $(ROOTFS_STAGE2): $(ROOTFS_STAGE1) $(QEMU) $(KERNEL)
 	  -no-reboot -nographic -monitor none
 	@[ -f $(BUILDDIR)/rootfs/etc/.image_finished ] || ( \
 	  echo "2nd stage build failed" >&2 ; false )
+
+PHONY += rootfs_clean
+rootfs_clean:
+	rm -rf $(BUILDDIR)/rootfs*
 
 ###############
 # Image Targets
