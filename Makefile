@@ -71,6 +71,7 @@ test_cache:
 
 SRCDIR := $(realpath $(CURDIR))
 SCRIPTDIR := $(SRCDIR)/script
+PATCHDIR := $(SRCDIR)/patches
 KCONFIGDIR := $(SRCDIR)/kconfig
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
@@ -110,6 +111,7 @@ KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
 $(KERNEL_PATCH): $(KERNEL_SRC)
 	cp $(KCONFIGDIR)/$(ARCH)_kconfig $(KERNELDIR)/.config
+	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/linux/series $(KERNELDIR)
 
 KERNEL := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/zImage
 kernel: $(KERNEL)

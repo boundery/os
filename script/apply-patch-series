@@ -1,0 +1,88 @@
+#!/bin/bash
+# Copyright 2012 Cumulus Networks Inc, all rights reserved
+
+#From http://oss.cumulusnetworks.com/CumulusLinux-2.5.9/scripts/apply-patch-series 
+
+set -e
+
+SERIES="$1"
+SRC="$2"
+
+#XXX Add support for series.dbg
+
+if [ -z "$SERIES" -o -z "$SRC" -o ! -f "$SERIES" -o ! -d "$SRC" ]; then
+    echo "Usage: $0 /path/to/series /path/to/source [--stgit [--quilt]]"
+    exit 100
+fi
+
+SERIES="`realpath \"$SERIES\"`"
+PATCH_ROOT=`dirname $SERIES`
+
+apply_series () {
+    #XXX Should verify the git hash in the first line comment, if possible.
+    #XXX Some series files have extra params after the patch file name.
+    while read line; do
+        line="`echo ${line} | cut -d'#' -f1`"
+        if [ -z "$line" ]; then
+            continue
+        fi
+
+        echo "Applying ${PATCH_ROOT}/${line}"
+        if patch -p1 < "${PATCH_ROOT}/${line}"
+        then
+            echo "Patch OK"
+        else
+            echo "Patch failed: $?" >&2
+            exit 1
+        fi
+    done
+}
+
+import_series ()  {
+    while read line; do
+	if [ -z "$line" ]; then
+	    continue
+	fi
+
+	[[ "$line" =~ ^#.*$ ]] && continue
+
+	if [ -e "${PATCH_ROOT}/${line}" ]; then
+	    echo "Importing ${PATCH_ROOT}/${line}"
+	    if ! stg import "${PATCH_ROOT}/${line}"; then exit 1; fi
+	    EDITOR=/bin/true VISUAL= dpkg-source --commit ./ "$line"
+	    dch -a "Applied patch ${line}."
+	    stg refresh
+	else
+	    echo "Missing patch file $line" >&2
+	    exit 1
+	fi
+    done
+}
+
+if [ x"$3" == x"--stgit" ]
+then
+    [ ! -f ${PATCH_ROOT}/gitignore ] ||	cp ${PATCH_ROOT}/gitignore $SRC/.gitignore
+    cd "$SRC" && \
+    git init &&  
+    git add . &&
+	(git commit -m "Unmodified debian src" || echo "git commit failed") &&
+    (if stg init; then
+    	echo "stg init succeeded: Beginning patching.";
+    else
+    	echo "resetting stg stack to $(stg log | tail -n 1 | \
+    		awk '{printf "%s", $1}') to avoid patching failure";
+    	stg reset $(stg log | tail -n 1 | awk '{printf "%s", $1}');
+    fi;)
+
+	 echo "STG init result is $?"
+    if [ x"$4" == x"--quilt" ]; then
+	import_series < "$SERIES"
+    else
+	# this is faster than doing it one-by-one
+
+	stg import -s "$SERIES"
+    fi
+    echo -e "%(description)s\n" > .git/patchexport.tmpl
+else
+    ( cd "$SRC" ; apply_series < "$SERIES" )
+fi
