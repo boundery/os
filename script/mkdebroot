@@ -48,6 +48,10 @@ if [ ! -d "$2" ]; then
 fi
 DIR="$2"
 
+#XXX Passing the keyring to --include doesn't seem to work during 2nd-stage.
+#    Copy keyring into rootfs?  This may break when debian-archive-keyring is
+#    installed during the 2nd-stage.  Perhaps pass the host keyring to debootstrap here?
+
 if ! debootstrap --foreign --variant=minbase --include=debian-archive-keyring --arch=$ARCH "$REL" "$DIR" "$MIRROR"; then
     echo debootstrap failed! >&2
     exit 10
@@ -64,6 +68,9 @@ cut -c5- <<EOF >$DIR/debootstrap/finish
     echo "root:badpass" | chpasswd &&
     touch /etc/.image_finished
 
+    echo
+    echo "Don't worry, this panic is normal."
+    echo
     sync #We panic the guest kernel to exit, so make sure cache is flushed.
 EOF
 chmod a+x $DIR/debootstrap/finish
