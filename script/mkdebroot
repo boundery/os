@@ -69,8 +69,8 @@ cut -c5- <<EOF >$DIR/debootstrap/finish
     touch /etc/.image_finished
 
     echo
-    echo "Don't worry, this panic is normal."
     echo
+    echo "Don't worry, this panic is normal:"
     sync #We panic the guest kernel to exit, so make sure cache is flushed.
 EOF
 chmod a+x $DIR/debootstrap/finish
