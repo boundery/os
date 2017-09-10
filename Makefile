@@ -35,12 +35,17 @@ ifeq ($(ARCH),)
 $(error ARCH not set, either implicitly by an PLATFORM_img goal, or explicitly)
 else ifeq ($(ARCH), armhf)
 QEMU_ARCH=arm
+QEMU_MACH=virt
 KERNEL_ARCH=arm
-#CROSS_PREFIX=arm-none-eabi-
+KERNEL_IMG=zImage
+KERNEL_EXTRA=dtbs
 CROSS_PREFIX=arm-linux-gnueabihf-
 else ifeq ($(ARCH), amd64)
 QEMU_ARCH=x86_64
+QEMU_MACH=pc
 KERNEL_ARCH=x86
+KERNEL_IMG=bzImage
+KERNEL_EXTRA=
 CROSS_PREFIX=
 else
 $(error ARCH $(ARCH) is not supported)
@@ -113,10 +118,11 @@ $(KERNEL_PATCH): $(KERNEL_SRC)
 	cp $(KCONFIGDIR)/$(ARCH)_kconfig $(KERNELDIR)/.config
 	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/linux/series $(KERNELDIR)
 
-KERNEL := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/zImage
+KERNEL := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG)
 kernel: $(KERNEL)
 $(KERNEL): $(KERNEL_PATCH)
-	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) zImage dtbs )
+	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
+	  $(KERNEL_IMG) $(KERNEL_EXTRAS) )
 
 PHONY += kernel_clean
 kernel_clean:
@@ -149,7 +155,8 @@ ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
 rootfs_stage2: $(ROOTFS_STAGE2)
 $(ROOTFS_STAGE2): $(ROOTFS_STAGE1) $(QEMU) $(KERNEL)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(QEMU) -M virt -m 1024 -kernel $(KERNELDIR)/arch/arm/boot/zImage \
+	  $(QEMU) -machine type=$(QEMU_MACH),accel=kvm:tcg -m 1024 \
+	  -kernel $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG) \
 	  -fsdev local,id=r,path=$(ROOTFSDIR),security_model=passthrough \
 	  -device virtio-9p-pci,fsdev=r,mount_tag=/dev/root \
 	  -append "root=/dev/root rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L,msize=262144,cache=loose console=ttyAMA0,115200 panic=1 init=/debootstrap/finish" \
