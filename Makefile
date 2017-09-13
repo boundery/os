@@ -39,6 +39,7 @@ QEMU_MACH=virt
 KERNEL_ARCH=arm
 KERNEL_IMG=zImage
 KERNEL_EXTRA=dtbs
+SERIAL_TTY=ttyAMA0
 CROSS_PREFIX=arm-linux-gnueabihf-
 else ifeq ($(ARCH), amd64)
 QEMU_ARCH=x86_64
@@ -46,6 +47,7 @@ QEMU_MACH=pc
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
 KERNEL_EXTRA=
+SERIAL_TTY=ttyS0
 CROSS_PREFIX=
 else
 $(error ARCH $(ARCH) is not supported)
@@ -155,11 +157,11 @@ ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
 rootfs_stage2: $(ROOTFS_STAGE2)
 $(ROOTFS_STAGE2): $(ROOTFS_STAGE1) $(QEMU) $(KERNEL)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(QEMU) -machine type=$(QEMU_MACH),accel=kvm:tcg -m 1024 \
+	  $(QEMU) -machine type=$(QEMU_MACH),accel=kvm:tcg -m 1024 -smp 2 \
 	  -kernel $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG) \
 	  -fsdev local,id=r,path=$(ROOTFSDIR),security_model=passthrough \
 	  -device virtio-9p-pci,fsdev=r,mount_tag=/dev/root \
-	  -append "root=/dev/root rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L,msize=262144,cache=loose console=ttyAMA0,115200 panic=1 init=/debootstrap/finish" \
+	  -append "root=/dev/root rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L,msize=262144,cache=loose console=$(SERIAL_TTY),115200 panic=1 init=/debootstrap/finish" \
 	  -no-reboot -nographic -monitor none
 	@[ -f $(BUILDDIR)/rootfs/etc/.image_finished ] || ( \
 	  echo "2nd stage build failed" >&2 ; false )
