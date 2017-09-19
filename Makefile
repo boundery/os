@@ -21,7 +21,7 @@ UBOOT_URL=ftp://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 
 #If we're building a specific image, automatically set the ARCH based on that.
 ARCHS := #Needed so ARCHS+=$(ARCH) expands $(ARCH) immediately, not recursively.
-ARM_TARGETS:=rpi2_img chip_img
+ARM_TARGETS:=rpi3_img chip_img
 ifneq ($(filter $(ARM_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=armhf
 ARCHS+=$(ARCH)
@@ -204,9 +204,9 @@ rootfs_clean:
 ###############
 # Image Targets
 
-RPI2_IMG := $(BUILDDIR)/rpi2image.bin
-rpi2_img: $(RPI2_IMG)
-$(RPI2_IMG): $(UBOOT) $(ROOTFS_STAGE2)
+RPI3_IMG := $(BUILDDIR)/rpi3image.bin
+rpi3_img: $(RPI3_IMG)
+$(RPI3_IMG): $(UBOOT) $(ROOTFS_STAGE2)
 	$(error WRITEME rootfs install kernel modules)
 	$(error WRITEME bootimage) #XXX Put "enable_uart=1" in config.txt for pi3
 
