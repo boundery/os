@@ -14,6 +14,7 @@ DEBIAN_RELEASE := stretch
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
 QEMU_URL=http://download.qemu-project.org/qemu-2.10.0.tar.xz
+UBOOT_URL=ftp://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -40,6 +41,8 @@ KERNEL_ARCH=arm
 KERNEL_IMG=zImage
 KERNEL_EXTRA=dtbs
 SERIAL_TTY=ttyAMA0
+UBOOT_ARCH=arm
+UBOOT_IMG=u-boot.bin
 CROSS_PREFIX=arm-linux-gnueabihf-
 else ifeq ($(ARCH), amd64)
 QEMU_ARCH=x86_64
@@ -84,6 +87,7 @@ KCONFIGDIR := $(SRCDIR)/kconfig
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
+UBOOTDIR := $(BUILDDIR)/uboot
 QEMUDIR := $(BUILDDIR)/qemu
 
 ###########################
@@ -146,6 +150,33 @@ PHONY += qemu_clean
 qemu_clean:
 	rm -rf $(QEMUDIR)
 
+ifeq ($(ARCH), armhf)
+
+UBOOT_SRC := $(UBOOTDIR)/Makefile
+uboot_src: $(UBOOT_SRC)
+$(UBOOT_SRC):
+	@mkdir -p $(UBOOTDIR)
+	wget -qO- $(UBOOT_URL) | tar --strip-components=1 -xj -C $(UBOOTDIR)
+
+UBOOT_PATCH := $(UBOOTDIR)/.config
+uboot_patch: $(UBOOT_PATCH)
+$(UBOOT_PATCH): $(UBOOT_SRC)
+	cp $(KCONFIGDIR)/$(ARCH)_uconfig $(UBOOTDIR)/.config
+	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/uboot/series $(UBOOTDIR)
+
+UBOOT := $(UBOOTDIR)/$(UBOOT_IMG)
+uboot: $(UBOOT)
+$(UBOOT): $(UBOOT_PATCH)
+	( cd $(UBOOTDIR); \
+	  $(MAKE) ARCH=$(UBOOT_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
+	          $(UBOOT_IMG) )
+
+PHONY += uboot_clean
+uboot_clean:
+	rm -rf $(UBOOTDIR)
+
+endif
+
 ROOTFS_STAGE1 := $(ROOTFSDIR)/etc/apt/sources.list
 rootfs_stage1: $(ROOTFS_STAGE1)
 $(ROOTFS_STAGE1):
@@ -175,7 +206,7 @@ rootfs_clean:
 
 RPI2_IMG := $(BUILDDIR)/rpi2image.bin
 rpi2_img: $(RPI2_IMG)
-$(RPI2_IMG): $(ROOTFS_STAGE2)
+$(RPI2_IMG): $(UBOOT) $(ROOTFS_STAGE2)
 	$(error WRITEME rootfs install kernel modules)
 	$(error WRITEME bootimage) #XXX Put "enable_uart=1" in config.txt for pi3
 
