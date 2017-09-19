@@ -206,7 +206,7 @@ rootfs_clean:
 
 RPI3_IMG := $(BUILDDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
-$(RPI3_IMG): $(UBOOT) $(ROOTFS_STAGE2)
+$(RPI3_IMG): $(UBOOT) $(ROOTFS_STAGE2) $(KERNEL)
 	$(error WRITEME rootfs install kernel modules)
 	$(error WRITEME bootimage) #XXX Put "enable_uart=1" in config.txt for pi3
 
