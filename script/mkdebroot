@@ -1,12 +1,17 @@
 #!/bin/bash
 
-#XXX Allow appending more --include packages.
-
 #XXX Make these options!
 MIRROR="http://ftp.debian.org/debian/"
 
+#XXX Allow appending more --include packages on cmdline.
+#XXX Passing the keyring to --include doesn't seem to work during 2nd-stage.
+#    Copy keyring into rootfs?  This may break when debian-archive-keyring is
+#    installed during the 2nd-stage.  Perhaps pass the host keyring to debootstrap here?
+#    Symptom is debootstrap rewriting apt srcs from http to https due to missing keyring.
+INCLUDES=debian-archive-keyring
+
 usage () {
-    echo "Usage: $0 [-a ARCH] RELEASE ROOTDIR" >&2
+    echo "Usage: $0 [-a ARCH] RELEASE ROOTDIR [extra_deb_URLs]*" >&2
     exit 99
 }
 
@@ -41,18 +46,29 @@ if [ -z "$1" ]; then
     usage
 fi
 REL="$1"
+shift
 
-if [ ! -d "$2" ]; then
-    echo "$2 doesn't exist or isn't a directory." >&2
+if [ ! -d "$1" ]; then
+    echo "$1 doesn't exist or isn't a directory." >&2
     usage
 fi
-DIR="$2"
+DIR="$1"
+shift
 
-#XXX Passing the keyring to --include doesn't seem to work during 2nd-stage.
-#    Copy keyring into rootfs?  This may break when debian-archive-keyring is
-#    installed during the 2nd-stage.  Perhaps pass the host keyring to debootstrap here?
+#Download the extra debs, the in-guest script will install them.
+mkdir -p $DIR/extra_debs
+for url in "$@"; do
+    if ! wget -qP $DIR/extra_debs/ $url; then
+        echo "wget $url failed" >&2
+        exit 9
+    fi
+done
+#Add all the .deb's deps to --include=.  debootstrap will do recursive deps.
+for deb in $DIR/extra_debs/*.deb; do
+    INCLUDES+=",`dpkg -I $deb | grep '^ Depends: ' | cut -d' ' -f3- | sed 's/([^)]*)//g' | tr -d ' '`"
+done
 
-if ! debootstrap --foreign --variant=minbase --include=debian-archive-keyring --arch=$ARCH "$REL" "$DIR" "$MIRROR"; then
+if ! debootstrap --foreign --variant=minbase --include=$INCLUDES --arch=$ARCH "$REL" "$DIR" "$MIRROR"; then
     echo debootstrap failed! >&2
     exit 10
 fi
@@ -62,7 +78,10 @@ cut -c5- <<EOF >$DIR/debootstrap/finish
 
     mount -t proc proc /proc &&
     mount -t sysfs sys /sys &&
+    export PATH=/usr/bin:/bin:/sbin:/usr/sbin &&
     /debootstrap/debootstrap --second-stage &&
+    dpkg -i /extra_debs/*.deb &&
+    rm -rf /extra_debs &&
     rm -f /var/cache/apt/archives/partial/*.deb &&
     rm -f /var/cache/apt/archives/*.deb &&
     echo "root:badpass" | chpasswd &&

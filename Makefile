@@ -8,13 +8,17 @@
 #XXX Do we even need to cross build anything other than containers?  How
 #    valuable is the seperation between build env and run env provided by .deb?
 
-#XXX Check signatures for HTTP downloads!
+#XXX Turn the http:// URLs into https:// if we can fix apt-cacher-ng to work with them.
+#XXX Check signatures for downloads!
 
 DEBIAN_RELEASE := stretch
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
 QEMU_URL=http://download.qemu-project.org/qemu-2.10.0.tar.xz
 UBOOT_URL=ftp://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
+
+DOCKER_URL=https://download.docker.com/linux/debian/dists/stretch/pool/stable/$(ARCH)/docker-ce_17.06.2~ce-0~debian_$(ARCH).deb
+EXTRA_DEB_URLS="$(DOCKER_URL)"
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -182,7 +186,7 @@ rootfs_bootstrap: $(ROOTFS_BOOTSTRAP)
 $(ROOTFS_BOOTSTRAP):
 	@mkdir -p $(ROOTFSDIR)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(SCRIPTDIR)/mkdebroot -a $(ARCH) $(DEBIAN_RELEASE) $(ROOTFSDIR)
+	  $(SCRIPTDIR)/mkdebroot -a $(ARCH) $(DEBIAN_RELEASE) $(ROOTFSDIR) $(EXTRA_DEB_URLS)
 
 ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
 rootfs_stage2: $(ROOTFS_STAGE2)
