@@ -63,8 +63,8 @@ cut -c5- <<EOF >$DIR/debootstrap/finish
     mount -t proc proc /proc &&
     mount -t sysfs sys /sys &&
     /debootstrap/debootstrap --second-stage &&
-    rm -f $DIR/var/cache/apt/archives/partial/*.deb &&
-    rm -f $DIR/var/cache/apt/archives/*.deb &&
+    rm -f /var/cache/apt/archives/partial/*.deb &&
+    rm -f /var/cache/apt/archives/*.deb &&
     echo "root:badpass" | chpasswd &&
     touch /etc/.image_finished
 
