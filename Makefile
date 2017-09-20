@@ -177,16 +177,16 @@ uboot_clean:
 
 endif
 
-ROOTFS_STAGE1 := $(ROOTFSDIR)/etc/apt/sources.list
-rootfs_stage1: $(ROOTFS_STAGE1)
-$(ROOTFS_STAGE1):
+ROOTFS_BOOTSTRAP := $(ROOTFSDIR)/etc/apt/sources.list
+rootfs_bootstrap: $(ROOTFS_BOOTSTRAP)
+$(ROOTFS_BOOTSTRAP):
 	@mkdir -p $(ROOTFSDIR)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(SCRIPTDIR)/mkdebroot -a $(ARCH) $(DEBIAN_RELEASE) $(ROOTFSDIR)
 
 ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
 rootfs_stage2: $(ROOTFS_STAGE2)
-$(ROOTFS_STAGE2): $(ROOTFS_STAGE1) $(QEMU) $(KERNEL)
+$(ROOTFS_STAGE2): $(QEMU) $(KERNEL) $(ROOTFS_BOOTSTRAP)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(QEMU) -machine type=$(QEMU_MACH),accel=kvm:tcg -m 1024 -smp 2 \
 	  -kernel $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG) \
