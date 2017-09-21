@@ -1,0 +1,44 @@
+#!/bin/bash
+
+usage () {
+    echo "Usage: $0 output-file output-size" >&2
+    exit 99
+}
+
+if [ -z "$1" ]; then
+    echo "Missing output file name." >&2
+    usage
+fi
+
+if [ -z "$2" ]; then
+    echo "Missing output file size." >&2
+    usage
+fi
+
+mkenvimage -p0 -o"$1" -s"$2" - << 'EOF'
+arch=arm
+baudrate=115200
+board=rpi
+boot_targets=mmc0
+bootargs=8250.nr_uarts=1 bcm2708_fb.fbwidth=1920 bcm2708_fb.fbheight=1200 bcm2708_fb.fbswap=1 vc_mem.mem_base=0x3ec00000 vc_mem.mem_size=0x40000000 console=tty1 console=ttyS0,115200 rdinit=/bin/sh
+bootcmd=run distro_bootcmd
+bootcmd_mmc0=fatload mmc 0:1 ${kernel_addr_r} ${kernelfile}; fatload mmc 0:1 ${fdt_addr_r} ${fdtfile}; fatload mmc 0:1 ${initrd_addr_r} ${initrdfile}; setenv initrdsize ${filesize}; bootz ${kernel_addr_r} ${initrd_addr_r}:${initrdsize} ${fdt_addr_r}
+bootdelay=2
+cpu=armv7
+distro_bootcmd=for target in ${boot_targets}; do run bootcmd_${target}; done
+ethact=smsc95xx_eth
+fdt_addr_r=0x02000000
+fdt_high=0xffffffff
+fdtfile=bcm2837-rpi-3-b.dtb
+initrd_addr_r=0x02100000
+initrd_high=0xffffffff
+initrdfile=initrd
+kernel_addr_r=0x01000000
+kernelfile=zImage
+preboot=usb start
+soc=bcm283x
+stderr=serial,vidconsole
+stdin=serial,usbkbd
+stdout=serial,vidconsole
+vendor=raspberrypi
+EOF

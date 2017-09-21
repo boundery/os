@@ -1,0 +1,38 @@
+#!/bin/bash
+
+usage () {
+    echo "Usage: $0 image-file image-size-mbs input-files..." >&2
+    exit 99
+}
+
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+imgfile=$1
+imgsize=$2
+shift 2
+infiles=$*
+
+if [ $imgsize -lt 2 ]; then
+    echo Size too small.
+    usage
+fi
+
+# partition layout, start on first meg boundary
+partstart=2048
+partsize=`expr $imgsize - 1`
+partblocks=`expr $partsize \* 2048`
+
+dd if=/dev/zero of=$imgfile bs=1024k count=$imgsize
+sfdisk --no-reread $imgfile << EOF || exit $?
+label: dos
+label-id: 0x0
+start=$partstart, size=$partblocks, type=c, bootable
+EOF
+
+mformat -i$imgfile@@1M -s32 -h64 -t$partsize
+
+if [ -n "$infiles" ]; then
+    mcopy -i$imgfile@@1M -v $infiles ::
+fi

@@ -1,0 +1,12 @@
+# Raspberry Pi 3 boot configuration
+
+kernel=u-boot.bin
+
+enable_uart=1
+
+disable_overscan=1
+
+# GPU memory size for each total memory size
+gpu_mem_256=100
+gpu_mem_512=100
+gpu_mem_1024=100

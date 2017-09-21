@@ -13,9 +13,13 @@
 
 DEBIAN_RELEASE := stretch
 
-KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.47.tar.xz
+KERNEL_VERSION = 4.9.47
+RPIFW_VERSION = 1.20170811
+
+KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 QEMU_URL=http://download.qemu-project.org/qemu-2.10.0.tar.xz
-UBOOT_URL=ftp://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
+UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
+RPIFW_URL=http://github.com/raspberrypi/firmware/archive/$(RPIFW_VERSION).tar.gz
 
 DOCKER_URL=https://download.docker.com/linux/debian/dists/stretch/pool/stable/$(ARCH)/docker-ce_17.06.2~ce-0~debian_$(ARCH).deb
 EXTRA_DEB_URLS="$(DOCKER_URL)"
@@ -91,8 +95,14 @@ KCONFIGDIR := $(SRCDIR)/kconfig
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
-UBOOTDIR := $(BUILDDIR)/uboot
 QEMUDIR := $(BUILDDIR)/qemu
+MISCDIR := $(BUILDDIR)/misc
+IMAGESDIR := $(BUILDDIR)/images
+
+ifeq ($(ARCH), armhf)
+UBOOTDIR := $(BUILDDIR)/uboot
+RPIFWDIR := $(BUILDDIR)/rpifw
+endif
 
 ###########################
 #Validate some assumptions.
@@ -132,7 +142,21 @@ KERNEL := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG)
 kernel: $(KERNEL)
 $(KERNEL): $(KERNEL_PATCH)
 	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
-	  $(KERNEL_IMG) $(KERNEL_EXTRAS) )
+	  $(KERNEL_IMG) modules $(KERNEL_EXTRAS) )
+
+ifeq ($(ARCH), armhf)
+KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2837-rpi-3-b.dtb
+kernel_dtb: $(KERNEL_DTB)
+$(KERNEL_DTB): $(KERNEL)
+endif
+
+KERNEL_MOD_INSTALL := $(ROOTFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
+kernel_mod_install: $(KERNEL_MOD_INSTALL)
+$(KERNEL_MOD_INSTALL): $(KERNEL) $(ROOTFS_BOOTSTRAP)
+	( cd $(KERNELDIR); \
+	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
+	          INSTALL_MOD_PATH=$(ROOTFSDIR) \
+	          modules_install )
 
 PHONY += kernel_clean
 kernel_clean:
@@ -179,6 +203,38 @@ PHONY += uboot_clean
 uboot_clean:
 	rm -rf $(UBOOTDIR)
 
+RPIFW_SRC := $(RPIFWDIR)/.complete
+rpifw_src: $(RPIFW_SRC)
+$(RPIFW_SRC):
+	@mkdir -p $(RPIFWDIR)
+	wget -qO- $(RPIFW_URL) | \
+	    tar --strip-components=2 -xz -C $(RPIFWDIR) \
+		firmware-$(RPIFW_VERSION)/boot
+	touch $(RPIFW_SRC)
+
+RPIFW := \
+	$(RPIFWDIR)/bcm2710-rpi-3-b.dtb \
+	$(RPIFWDIR)/bcm2710-rpi-cm3.dtb \
+	$(RPIFWDIR)/bootcode.bin \
+	$(RPIFWDIR)/start.elf \
+	$(RPIFWDIR)/fixup.dat
+rpifw: $(RPIFW)
+$(RPIFW): $(RPIFW_SRC)
+
+PHONY += rpifw_clean
+rpifw_clean:
+	rm -rf $(RPIFWDIR)
+
+UBOOT_ENV := $(MISCDIR)/uboot.env
+uboot_env: $(UBOOT_ENV)
+$(UBOOT_ENV): $(SCRIPTDIR)/mkubootenv
+	@mkdir -p $(MISCDIR)
+	$(SCRIPTDIR)/mkubootenv $(UBOOT_ENV) 16384
+
+PHONY += uboot_env_clean
+uboot_env_clean:
+	rm -f $(UBOOT_ENV)
+
 endif
 
 ROOTFS_BOOTSTRAP := $(ROOTFSDIR)/etc/apt/sources.list
@@ -205,19 +261,48 @@ PHONY += rootfs_clean
 rootfs_clean:
 	rm -rf $(BUILDDIR)/rootfs*
 
+INITRD := $(MISCDIR)/initrd
+initrd: $(INITRD)
+$(INITRD): $(ROOTFS_STAGE2)
+	@mkdir -p $(MISCDIR)
+	( cd $(ROOTFSDIR); \
+	  find . | \
+	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot cpio -o -H newc | \
+	  gzip > $(INITRD) )
+
+PHONY += initrd_clean
+initrd_clean:
+	rm -f $(INITRD)
+
 ###############
 # Image Targets
 
+IMG_FILES = \
+	$(INITRD) \
+	$(KERNEL) \
+
+ifeq ($(ARCH), armhf)
+IMG_FILES += \
+	$(KERNEL_DTB) \
+	$(UBOOT) \
+	$(UBOOT_ENV) \
+	$(SRCDIR)/rpi/config.txt \
+	$(RPIFW)
+
+else ifeq ($(ARCH), amd64)
+IMG_FILES += \
+
+endif
+
 RPI3_IMG := $(BUILDDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
-$(RPI3_IMG): $(UBOOT) $(ROOTFS_STAGE2) $(KERNEL)
-	$(error WRITEME rootfs install kernel modules)
-	$(error WRITEME bootimage) #XXX Put "enable_uart=1" in config.txt for pi3
+$(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 256 $(IMG_FILES)
 
 PC_IMG := $(BUILDDIR)/pcimage.bin
 pc_img: $(PC_IMG)
-$(PC_IMG): $(ROOTFS_STAGE2) $(KERNEL)
-	$(error WRITEME rootfs install kernel + modules)
+$(PC_IMG): $(IMG_FILES)
+	$(error WRITEME rootfs install kernel)
 	$(error WRITEME bootimage)
 
 .PHONY: $(PHONY)
