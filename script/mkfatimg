@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 usage () {
     echo "Usage: $0 image-file image-size-mbs input-files..." >&2
@@ -25,7 +25,7 @@ partsize=`expr $imgsize - 1`
 partblocks=`expr $partsize \* 2048`
 
 dd if=/dev/zero of=$imgfile bs=1024k count=$imgsize
-sfdisk --no-reread $imgfile << EOF || exit $?
+sfdisk --no-reread $imgfile << EOF | sed 's/^>>> //'
 label: dos
 label-id: 0x0
 start=$partstart, size=$partblocks, type=c, bootable
