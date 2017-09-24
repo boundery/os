@@ -227,9 +227,9 @@ rpifw_clean:
 
 UBOOT_ENV := $(MISCDIR)/uboot.env
 uboot_env: $(UBOOT_ENV)
-$(UBOOT_ENV): $(SCRIPTDIR)/mkubootenv
+$(UBOOT_ENV): $(SRCDIR)/rpi/ubootenv
 	@mkdir -p $(MISCDIR)
-	$(SCRIPTDIR)/mkubootenv $(UBOOT_ENV) 16384
+	mkenvimage -o$(UBOOT_ENV) -s16384 -p0 $<
 
 PHONY += uboot_env_clean
 uboot_env_clean:
