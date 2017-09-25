@@ -2,7 +2,7 @@ arch=arm
 baudrate=115200
 board=rpi
 boot_targets=mmc0
-bootargs=8250.nr_uarts=1 bcm2708_fb.fbwidth=1920 bcm2708_fb.fbheight=1200 bcm2708_fb.fbswap=1 vc_mem.mem_base=0x3ec00000 vc_mem.mem_size=0x40000000 console=tty1 console=ttyS0,115200 rdinit=/bin/sh
+bootargs=8250.nr_uarts=1 bcm2708_fb.fbwidth=1920 bcm2708_fb.fbheight=1200 bcm2708_fb.fbswap=1 vc_mem.mem_base=0x3ec00000 vc_mem.mem_size=0x40000000 console=tty1 console=ttyS0,115200
 bootcmd=run distro_bootcmd
 bootcmd_mmc0=fatload mmc 0:1 ${kernel_addr_r} ${kernelfile}; fatload mmc 0:1 ${fdt_addr_r} ${fdtfile}; fatload mmc 0:1 ${initrd_addr_r} ${initrdfile}; setenv initrdsize ${filesize}; bootz ${kernel_addr_r} ${initrd_addr_r}:${initrdsize} ${fdt_addr_r}
 bootdelay=2

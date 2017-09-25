@@ -9,6 +9,14 @@ MIRROR="http://ftp.debian.org/debian/"
 #    installed during the 2nd-stage.  Perhaps pass the host keyring to debootstrap here?
 #    Symptom is debootstrap rewriting apt srcs from http to https due to missing keyring.
 INCLUDES=debian-archive-keyring
+INCLUDES+=,procps
+INCLUDES+=,net-tools
+INCLUDES+=,ifupdown
+INCLUDES+=,isc-dhcp-client
+INCLUDES+=,inetutils-ping
+INCLUDES+=,dnsutils
+INCLUDES+=,vim
+INCLUDES+=,nvi
 
 usage () {
     echo "Usage: $0 [-a ARCH] RELEASE ROOTDIR [extra_deb_URLs]*" >&2
@@ -107,6 +115,25 @@ cut -c5- <<EOF >$DIR/etc/apt/sources.list
     deb http://httpredir.debian.org/debian $REL-updates main contrib non-free
     deb http://security.debian.org $REL/updates main contrib non-free
 EOF
+
+cut -c5- <<EOF >$DIR/etc/fstab
+    sysfs            /sys        sysfs     nosuid,noexec,nodev
+    proc             /proc       proc      nosuid,noexec,nodev
+    devtmpfs         /dev        devtmpfs  nosuid,noexec
+    devpts           /dev/pts    devpts    nosuid,noexec,gid=5,mode=620,x-mount.mkdir=755
+    /dev/mmcblk0p1   /boot       vfat      noauto
+EOF
+
+ln -s ../proc/self/mounts $DIR/etc/mtab
+
+cut -c5- <<EOF >$DIR/init
+    #!/bin/sh
+    mount /proc
+    mount -a
+    #XXX eventually this will be some form of getty
+    exec setsid -c /bin/bash -l
+EOF
+chmod 555 $DIR/init
 
 #XXX --include locales,dbus in debootstrap.
 
