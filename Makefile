@@ -8,6 +8,9 @@
 #XXX Do we even need to cross build anything other than containers?  How
 #    valuable is the seperation between build env and run env provided by .deb?
 
+#XXX Need some locking around fakeroot.  Otherwise 2 parallel fakeroots could
+#    stomp on each other.
+
 #XXX Turn the http:// URLs into https:// if we can fix apt-cacher-ng to work with them.
 #XXX Check signatures for downloads!
 
@@ -109,7 +112,7 @@ endif
 
 #XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
 #XXX Make sure qemu builddeps are installed.
-#XXX new enough cross tools, etc.
+#XXX new enough cross tools, u-boot-tools (mkenvimage), etc.
 
 #########
 # Targets
@@ -154,6 +157,7 @@ KERNEL_MOD_INSTALL := $(ROOTFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
 $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 	( cd $(KERNELDIR); \
+	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	          INSTALL_MOD_PATH=$(ROOTFSDIR) \
 	          modules_install )
