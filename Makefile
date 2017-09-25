@@ -152,7 +152,7 @@ endif
 
 KERNEL_MOD_INSTALL := $(ROOTFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
-$(KERNEL_MOD_INSTALL): $(KERNEL) $(ROOTFS_BOOTSTRAP)
+$(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 	( cd $(KERNELDIR); \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	          INSTALL_MOD_PATH=$(ROOTFSDIR) \
@@ -244,9 +244,11 @@ $(ROOTFS_BOOTSTRAP):
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(SCRIPTDIR)/mkdebroot -a $(ARCH) $(DEBIAN_RELEASE) $(ROOTFSDIR) $(EXTRA_DEB_URLS)
 
+$(KERNEL_MOD_INSTALL): $(ROOTFS_BOOTSTRAP)
+
 ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
 rootfs_stage2: $(ROOTFS_STAGE2)
-$(ROOTFS_STAGE2): $(QEMU) $(KERNEL) $(ROOTFS_BOOTSTRAP)
+$(ROOTFS_STAGE2): $(QEMU) $(KERNEL) $(KERNEL_MOD_INSTALL) $(ROOTFS_BOOTSTRAP)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(QEMU) -machine type=$(QEMU_MACH),accel=kvm:tcg -m 1024 -smp 2 \
 	  -kernel $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG) \
