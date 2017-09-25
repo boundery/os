@@ -305,10 +305,18 @@ rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
 	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 256 $(IMG_FILES)
 
+PHONY += rpi3_img_clean
+rpi3_img_clean:
+	rm $(RPI3_IMG)
+
 PC_IMG := $(BUILDDIR)/pcimage.bin
 pc_img: $(PC_IMG)
 $(PC_IMG): $(IMG_FILES)
 	$(error WRITEME rootfs install kernel)
 	$(error WRITEME bootimage)
+
+PHONY += pc_img_clean
+pc_img_clean:
+	rm $(PC_IMG)
 
 .PHONY: $(PHONY)
