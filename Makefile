@@ -99,7 +99,7 @@ BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
 QEMUDIR := $(BUILDDIR)/qemu
-MISCDIR := $(BUILDDIR)/misc
+IMGFSDIR := $(BUILDDIR)/img_fs
 IMAGESDIR := $(BUILDDIR)/images
 
 ifeq ($(ARCH), armhf)
@@ -112,7 +112,8 @@ endif
 
 #XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
 #XXX Make sure qemu builddeps are installed.
-#XXX new enough cross tools, u-boot-tools (mkenvimage), etc.
+#XXX new enough cross tools, u-boot-tools (mkenvimage), mtools, grub (EFI and pc),
+#    xorriso,etc.
 
 #########
 # Targets
@@ -229,10 +230,10 @@ PHONY += rpifw_clean
 rpifw_clean:
 	rm -rf $(RPIFWDIR)
 
-UBOOT_ENV := $(MISCDIR)/uboot.env
+UBOOT_ENV := $(IMGFSDIR)/uboot.env
 uboot_env: $(UBOOT_ENV)
 $(UBOOT_ENV): $(SRCDIR)/rpi/ubootenv
-	@mkdir -p $(MISCDIR)
+	@mkdir -p $(IMGFSDIR)
 	mkenvimage -o$(UBOOT_ENV) -s16384 -p0 $<
 
 PHONY += uboot_env_clean
@@ -268,10 +269,10 @@ PHONY += rootfs_clean
 rootfs_clean:
 	rm -rf $(BUILDDIR)/rootfs*
 
-INITRD := $(MISCDIR)/initrd
+INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
 $(INITRD): $(ROOTFS_STAGE2)
-	@mkdir -p $(MISCDIR)
+	@mkdir -p $(IMGFSDIR)
 	( cd $(ROOTFSDIR); \
 	  find . | \
 	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot cpio -o -H newc | \
@@ -297,24 +298,28 @@ IMG_FILES += \
 	$(RPIFW)
 
 else ifeq ($(ARCH), amd64)
-IMG_FILES += \
+IMG_FILES += $(SRCDIR)/pc/grub.cfg
 
 endif
 
-RPI3_IMG := $(BUILDDIR)/rpi3image.bin
+RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
+	mkdir -p $(IMAGESDIR)
 	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 256 $(IMG_FILES)
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:
 	rm $(RPI3_IMG)
 
-PC_IMG := $(BUILDDIR)/pcimage.bin
+PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)
-$(PC_IMG): $(IMG_FILES)
-	$(error WRITEME rootfs install kernel)
-	$(error WRITEME bootimage)
+$(PC_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
+	mkdir -p $(IMAGESDIR)
+	cp `echo $(IMG_FILES) | sed -E 's|$(IMGFSDIR)/[^ ]+||'` $(IMGFSDIR)
+	mkdir -p $(IMGFSDIR)/boot/grub
+	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
+	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
 
 PHONY += pc_img_clean
 pc_img_clean:
