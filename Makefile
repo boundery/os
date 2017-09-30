@@ -32,12 +32,12 @@ EXTRA_DEB_URLS="$(DOCKER_URL)"
 
 #If we're building a specific image, automatically set the ARCH based on that.
 ARCHS := #Needed so ARCHS+=$(ARCH) expands $(ARCH) immediately, not recursively.
-ARM_TARGETS:=rpi3_img chip_img
+ARM_TARGETS:=rpi3_img rpi3_img_clean chip_img chip_img_clean
 ifneq ($(filter $(ARM_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=armhf
 ARCHS+=$(ARCH)
 endif
-AMD64_TARGETS:=pc_img
+AMD64_TARGETS:=pc_img pc_img_clean
 ifneq ($(filter $(AMD64_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=amd64
 ARCHS+=$(ARCH)
