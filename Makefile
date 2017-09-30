@@ -260,8 +260,9 @@ $(ROOTFS_STAGE2): $(QEMU) $(KERNEL) $(KERNEL_MOD_INSTALL) $(ROOTFS_BOOTSTRAP)
 	  -device virtio-9p-pci,fsdev=r,mount_tag=/dev/root \
 	  -append "root=/dev/root rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L,msize=262144,cache=loose console=$(SERIAL_TTY),115200 panic=1 init=/debootstrap/finish" \
 	  -no-reboot -nographic -monitor none
-	@[ -f $(BUILDDIR)/rootfs/etc/.image_finished ] || ( \
+	@[ -f $(ROOTFS_STAGE2) ] || ( \
 	  echo "2nd stage build failed" >&2 ; false )
+	@touch $(ROOTFS_STAGE2)
 
 PHONY += rootfs_clean
 rootfs_clean:
