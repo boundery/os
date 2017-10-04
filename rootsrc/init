@@ -1,0 +1,5 @@
+#!/bin/sh
+mount /proc
+mount -a
+#XXX eventually this will be some form of getty
+exec setsid -c bash -l

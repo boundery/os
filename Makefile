@@ -20,7 +20,6 @@ KERNEL_VERSION = 4.9.47
 RPIFW_VERSION = 1.20170811
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
-QEMU_URL=http://download.qemu-project.org/qemu-2.10.0.tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 RPIFW_URL=http://github.com/raspberrypi/firmware/archive/$(RPIFW_VERSION).tar.gz
 
@@ -46,8 +45,6 @@ endif
 ifeq ($(ARCH),)
 $(error ARCH not set, either implicitly by an PLATFORM_img goal, or explicitly)
 else ifeq ($(ARCH), armhf)
-QEMU_ARCH=arm
-QEMU_MACH=virt
 KERNEL_ARCH=arm
 KERNEL_IMG=zImage
 KERNEL_EXTRAS=dtbs
@@ -55,14 +52,14 @@ SERIAL_TTY=ttyAMA0
 UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
 CROSS_PREFIX=arm-linux-gnueabihf-
+DEBIAN_CONTAINER := arm32v7/debian:$(DEBIAN_RELEASE)-slim
 else ifeq ($(ARCH), amd64)
-QEMU_ARCH=x86_64
-QEMU_MACH=pc
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
 KERNEL_EXTRAS=
 SERIAL_TTY=ttyS0
 CROSS_PREFIX=
+DEBIAN_CONTAINER := debian:$(DEBIAN_RELEASE)-slim
 else
 $(error ARCH $(ARCH) is not supported)
 endif
@@ -82,6 +79,7 @@ PROXY_PORT=3142
 PROXY_IP=$(shell docker inspect --format '{{.NetworkSettings.IPAddress}}' $(CACHE_CONTAINER) 2>/dev/null)
 ifneq ($(PROXY_IP),)
 export http_proxy=http://$(PROXY_IP):$(PROXY_PORT)
+DOCKER_BUILD_PROXY=--build-arg http_proxy=http://$(PROXY_IP):$(PROXY_PORT)
 endif
 
 test_cache:
@@ -94,11 +92,12 @@ SRCDIR := $(realpath $(CURDIR))
 SCRIPTDIR := $(SRCDIR)/script
 PATCHDIR := $(SRCDIR)/patches
 KCONFIGDIR := $(SRCDIR)/kconfig
+ROOTSRCDIR := $(SRCDIR)/rootsrc
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
+DOCKERDIR := $(BUILDDIR)/dockerbuild
 KERNELDIR := $(BUILDDIR)/linux
-QEMUDIR := $(BUILDDIR)/qemu
 IMGFSDIR := $(BUILDDIR)/img_fs
 IMAGESDIR := $(BUILDDIR)/images
 
@@ -107,20 +106,27 @@ UBOOTDIR := $(BUILDDIR)/uboot
 RPIFWDIR := $(BUILDDIR)/rpifw
 endif
 
+BUILDROOTID := $(shell echo $(SRCDIR) | sha1sum | cut -b1-10)
+
 ###########################
 #Validate some assumptions.
 
 #XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
-#XXX Make sure qemu builddeps are installed.
 #XXX new enough cross tools, u-boot-tools (mkenvimage), mtools, grub (EFI and pc),
-#    xorriso,etc.
+#    docker, xorriso, etc.
+
+#Make sure binfmt is configured properly.
+ifneq ($(shell echo '50c12d79f40fc1cacc4819ae9bac6bb1  /proc/sys/fs/binfmt_misc/qemu-arm' | \
+	md5sum -c --quiet; echo $$?),0)
+$(error Run "sudo scripts/qemu-arm-static.sh")
+endif
 
 #########
 # Targets
 
 PHONY += buildinfo
 buildinfo:
-	@echo Foo: $(ARCH) $(QEMU_ARCH) $(SRCDIR) $(BUILDDIR)
+	@echo Foo: $(ARCH) $(SRCDIR) $(BUILDDIR)
 
 PHONY += all-clean
 all_clean:
@@ -166,22 +172,6 @@ $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 PHONY += kernel_clean
 kernel_clean:
 	rm -rf $(KERNELDIR)
-
-#Need a newer qemu that has working VirtFS.
-QEMU_SRC := $(QEMUDIR)/configure
-qemu_src: $(QEMU_SRC)
-$(QEMU_SRC):
-	@mkdir -p $(QEMUDIR)
-	wget -qO- $(QEMU_URL) | tar --strip-components=1 -xJ -C $(QEMUDIR)
-
-QEMU := $(QEMUDIR)/$(QEMU_ARCH)-softmmu/qemu-system-$(QEMU_ARCH)
-qemu: $(QEMU)
-$(QEMU): $(QEMU_SRC)
-	( cd $(QEMUDIR); ./configure --target-list=$(QEMU_ARCH)-softmmu; $(MAKE) )
-
-PHONY += qemu_clean
-qemu_clean:
-	rm -rf $(QEMUDIR)
 
 ifeq ($(ARCH), armhf)
 
@@ -242,36 +232,51 @@ uboot_env_clean:
 
 endif
 
-ROOTFS_BOOTSTRAP := $(ROOTFSDIR)/etc/apt/sources.list
-rootfs_bootstrap: $(ROOTFS_BOOTSTRAP)
-$(ROOTFS_BOOTSTRAP):
+DOCKER_BUILD := $(DOCKERDIR)/Dockerfile
+docker_build: $(DOCKER_BUILD)
+$(DOCKER_BUILD): $(SRCDIR)/Dockerfile.tmpl $(ROOTSRCDIR)/*
+	@mkdir -p $(DOCKERDIR)
+	@wget -qP $(DOCKERDIR)/ $(EXTRA_DEB_URLS)
+	cp $(ROOTSRCDIR)/* $(DOCKERDIR)/
+	sed "s|XFROM_CONTAINERX|$(DEBIAN_CONTAINER)|" > $@ < $(SRCDIR)/Dockerfile.tmpl
+
+PHONY += docker_build_clean
+docker_build_clean:
+	rm -rf $(DOCKERDIR)
+
+#We have to start a container to get a flattened "export" of the container,
+# rather than the layered "save" of the image.
+ROOTFS := $(ROOTFSDIR)/init
+rootfs: $(ROOTFS)
+$(ROOTFS): $(DOCKER_BUILD)
+	@rm -rf $(BUILDDIR)/rootfs*
 	@mkdir -p $(ROOTFSDIR)
+	docker build $(DOCKER_BUILD_PROXY) --force-rm=true -t \
+	  rootfs-$(BUILDROOTID) --iidfile=$(DOCKER_ROOTFS) $(DOCKERDIR)
+	docker run --name rootfs-$(BUILDROOTID) rootfs-$(BUILDROOTID) echo
+	docker export rootfs-$(BUILDROOTID) | \
+	  fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
+	  tar xf - -C $(ROOTFSDIR)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(SCRIPTDIR)/mkdebroot -a $(ARCH) $(DEBIAN_RELEASE) $(ROOTFSDIR) $(EXTRA_DEB_URLS)
+	  $(SCRIPTDIR)/mkdevnodes $(ROOTFSDIR)
+	touch $(ROOTFS)
+	-docker rm rootfs-$(BUILDROOTID)
+	-docker rmi rootfs-$(BUILDROOTID)
 
-$(KERNEL_MOD_INSTALL): $(ROOTFS_BOOTSTRAP)
-
-ROOTFS_STAGE2 := $(BUILDDIR)/rootfs/etc/.image_finished
-rootfs_stage2: $(ROOTFS_STAGE2)
-$(ROOTFS_STAGE2): $(QEMU) $(KERNEL) $(KERNEL_MOD_INSTALL) $(ROOTFS_BOOTSTRAP)
-	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(QEMU) -machine type=$(QEMU_MACH),accel=kvm:tcg -m 1024 -smp 2 \
-	  -kernel $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG) \
-	  -fsdev local,id=r,path=$(ROOTFSDIR),security_model=passthrough \
-	  -device virtio-9p-pci,fsdev=r,mount_tag=/dev/root \
-	  -append "root=/dev/root rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L,msize=262144,cache=loose console=$(SERIAL_TTY),115200 panic=1 init=/debootstrap/finish" \
-	  -no-reboot -nographic -monitor none
-	@[ -f $(ROOTFS_STAGE2) ] || ( \
-	  echo "2nd stage build failed" >&2 ; false )
-	@touch $(ROOTFS_STAGE2)
+$(KERNEL_MOD_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
+	-docker rm rootfs-$(BUILDROOTID) || true
+	-docker rmi rootfs-$(BUILDROOTID) || true
+ifneq ($(shell docker images -f "dangling=true" -q),)
+	-docker rmi `docker images -f "dangling=true" -q`
+endif
 	rm -rf $(BUILDDIR)/rootfs*
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
-$(INITRD): $(ROOTFS_STAGE2)
+$(INITRD): $(ROOTFS) $(KERNEL_MOD_INSTALL)
 	@mkdir -p $(IMGFSDIR)
 	( cd $(ROOTFSDIR); \
 	  find . | \

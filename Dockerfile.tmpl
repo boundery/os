@@ -1,0 +1,25 @@
+FROM XFROM_CONTAINERX
+
+COPY *.deb /debs/
+
+#XXX Would be better to make the list of packages an ARG or file in the
+#    dockerdir so that this whole repo could all be generic...
+
+RUN    apt-get update \
+    && apt-get install -y --no-install-recommends \
+           net-tools \
+           ifupdown \
+           isc-dhcp-client \
+           inetutils-ping \
+           dnsutils \
+           vim \
+           nvi \
+           ca-certificates \
+           procps \
+           /debs/*.deb \
+    && rm -rf /debs \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY init /
+COPY fstab /etc/
+COPY interfaces /etc/network/

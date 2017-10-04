@@ -1,0 +1,5 @@
+sysfs            /sys        sysfs     nosuid,noexec,nodev
+proc             /proc       proc      nosuid,noexec,nodev
+devtmpfs         /dev        devtmpfs  nosuid,noexec
+devpts           /dev/pts    devpts    nosuid,noexec,gid=5,mode=620,x-mount.mkdir=755
+/dev/mmcblk0p1   /boot       vfat      noauto
