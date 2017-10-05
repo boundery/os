@@ -16,12 +16,13 @@
 
 DEBIAN_RELEASE := stretch
 
-KERNEL_VERSION = 4.9.47
-RPIFW_VERSION = 1.20170811
+KERNEL_VERSION = 4.13.4
+BOOTFW_VERSION = 1.20170811
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
-RPIFW_URL=http://github.com/raspberrypi/firmware/archive/$(RPIFW_VERSION).tar.gz
+BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
+KERNFW_URL=http://github.com/RPi-Distro/firmware-nonfree/archive/master/brcm80211/brcm.tar.gz
 
 DOCKER_URL=https://download.docker.com/linux/debian/dists/stretch/pool/stable/$(ARCH)/docker-ce_17.06.2~ce-0~debian_$(ARCH).deb
 EXTRA_DEB_URLS="$(DOCKER_URL)"
@@ -103,7 +104,8 @@ IMAGESDIR := $(BUILDDIR)/images
 
 ifeq ($(ARCH), armhf)
 UBOOTDIR := $(BUILDDIR)/uboot
-RPIFWDIR := $(BUILDDIR)/rpifw
+BOOTFWDIR := $(BUILDDIR)/bootfw
+KERNFWDIR := $(BUILDDIR)/kernfw
 endif
 
 BUILDROOTID := $(shell echo $(SRCDIR) | sha1sum | cut -b1-10)
@@ -173,7 +175,7 @@ PHONY += kernel_clean
 kernel_clean:
 	rm -rf $(KERNELDIR)
 
-ifeq ($(ARCH), armhf)
+ifeq ($(ARCH), armhf) # {
 
 UBOOT_SRC := $(UBOOTDIR)/Makefile
 uboot_src: $(UBOOT_SRC)
@@ -198,27 +200,51 @@ PHONY += uboot_clean
 uboot_clean:
 	rm -rf $(UBOOTDIR)
 
-RPIFW_SRC := $(RPIFWDIR)/.complete
-rpifw_src: $(RPIFW_SRC)
-$(RPIFW_SRC):
-	@mkdir -p $(RPIFWDIR)
-	wget -qO- $(RPIFW_URL) | \
-	    tar --strip-components=2 -xz -C $(RPIFWDIR) \
-		firmware-$(RPIFW_VERSION)/boot
-	touch $(RPIFW_SRC)
+BOOTFW_SRC := $(BOOTFWDIR)/COPYING.linux
+bootfw_src: $(BOOTFW_SRC)
+$(BOOTFW_SRC):
+	@mkdir -p $(BOOTFWDIR)
+	wget -qO- $(BOOTFW_URL) | \
+	    tar --strip-components=2 -xz -C $(BOOTFWDIR) \
+		firmware-$(BOOTFW_VERSION)/boot
 
-RPIFW := \
-	$(RPIFWDIR)/bcm2710-rpi-3-b.dtb \
-	$(RPIFWDIR)/bcm2710-rpi-cm3.dtb \
-	$(RPIFWDIR)/bootcode.bin \
-	$(RPIFWDIR)/start.elf \
-	$(RPIFWDIR)/fixup.dat
-rpifw: $(RPIFW)
-$(RPIFW): $(RPIFW_SRC)
+BOOTFW := \
+	$(BOOTFWDIR)/bcm2710-rpi-3-b.dtb \
+	$(BOOTFWDIR)/bcm2710-rpi-cm3.dtb \
+	$(BOOTFWDIR)/bootcode.bin \
+	$(BOOTFWDIR)/start.elf \
+	$(BOOTFWDIR)/fixup.dat
+bootfw: $(BOOTFW)
+$(BOOTFW): $(BOOTFW_SRC)
 
-PHONY += rpifw_clean
-rpifw_clean:
-	rm -rf $(RPIFWDIR)
+PHONY += bootfw_clean
+bootfw_clean:
+	rm -rf $(BOOTFWDIR)
+
+KERNFW_SRC := $(KERNFWDIR)/LICENSE
+kernfw_src: $(KERNFW_SRC)
+$(KERNFW_SRC):
+	@mkdir -p $(KERNFWDIR)
+	wget -qO- $(KERNFW_URL) | \
+	    tar --strip-components=2 -xz -C $(KERNFWDIR) \
+		firmware-nonfree-master/brcm80211
+
+KERNFW_INSTALL_DIR := $(ROOTFSDIR)/lib/firmware/brcm
+KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw-610.812
+kernfw_install: $(KERNFW_INSTALL)
+$(KERNFW_INSTALL): $(KERNFW_SRC) # see below for additional deps
+	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
+	    sh -ce 'mkdir -p $(KERNFW_INSTALL_DIR); \
+	            cp -rT $(KERNFWDIR)/brcm $(KERNFW_INSTALL_DIR); \
+	            find $(KERNFW_INSTALL_DIR) \
+			 -type d -exec chmod 755 {} \; -o \
+	                 -type f -exec chmod 644 {} \;'
+
+$(KERNEL_MOD_INSTALL): $(KERNFW_INSTALL) # prevent concurrent fakeroot
+
+PHONY += kernfw_clean
+kernfw_clean:
+	rm -rf $(KERNFWDIR)
 
 UBOOT_ENV := $(IMGFSDIR)/uboot.env
 uboot_env: $(UBOOT_ENV)
@@ -230,7 +256,7 @@ PHONY += uboot_env_clean
 uboot_env_clean:
 	rm -f $(UBOOT_ENV)
 
-endif
+endif # }
 
 DOCKER_BUILD := $(DOCKERDIR)/Dockerfile
 docker_build: $(DOCKER_BUILD)
@@ -264,6 +290,7 @@ $(ROOTFS): $(DOCKER_BUILD)
 	-docker rmi rootfs-$(BUILDROOTID)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
+$(KERNFW_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
@@ -272,11 +299,11 @@ rootfs_clean:
 ifneq ($(shell docker images -f "dangling=true" -q),)
 	-docker rmi `docker images -f "dangling=true" -q`
 endif
-	rm -rf $(BUILDDIR)/rootfs*
+	rm -rf $(BUILDDIR)/rootfs* $(BUILDDIR)/rootfs.fakeroot
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
-$(INITRD): $(ROOTFS) $(KERNEL_MOD_INSTALL)
+$(INITRD): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
 	( cd $(ROOTFSDIR); \
 	  find . | \
@@ -300,7 +327,7 @@ IMG_FILES += \
 	$(UBOOT) \
 	$(UBOOT_ENV) \
 	$(SRCDIR)/rpi/config.txt \
-	$(RPIFW)
+	$(BOOTFW)
 
 else ifeq ($(ARCH), amd64)
 IMG_FILES += $(SRCDIR)/pc/grub.cfg

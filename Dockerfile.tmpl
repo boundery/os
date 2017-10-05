@@ -7,11 +7,13 @@ COPY *.deb /debs/
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
+           kmod \
            net-tools \
            ifupdown \
            isc-dhcp-client \
            inetutils-ping \
            dnsutils \
+           wpasupplicant \
            vim \
            nvi \
            ca-certificates \

@@ -1,5 +1,14 @@
 #!/bin/sh
+
 mount /proc
 mount -a
+
+echo 5 >/proc/sys/kernel/panic
+
+modprobe brcmfmac
+
 #XXX eventually this will be some form of getty
-exec setsid -c bash -l
+setsid -cw bash -l
+
+umount -va
+sync
