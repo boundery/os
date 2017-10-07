@@ -18,6 +18,7 @@ RUN    apt-get update \
            nvi \
            ca-certificates \
            procps \
+           busybox-syslogd \
            /debs/*.deb \
     && rm -rf /debs \
     && rm -rf /var/lib/apt/lists/*
@@ -25,3 +26,5 @@ RUN    apt-get update \
 COPY init /
 COPY fstab /etc/
 COPY interfaces /etc/network/
+COPY wpa_supplicant.conf /usr/local/etc
+COPY mkwpaconf /usr/local/sbin

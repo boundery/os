@@ -1,14 +1,45 @@
 #!/bin/sh
 
+sleep 2 # wait a little for devices to appear
+
 mount /proc
 mount -a
+
+syslogd -C64
 
 echo 5 >/proc/sys/kernel/panic
 
 modprobe brcmfmac
 
+wlanconf=/boot/wlan.conf
+wpaconf=/run/wpa_supplicant.conf
+ifname=wlan0
+if [ -f $wlanconf ]; then
+    sysif=/sys/class/net/$ifname
+    n=5
+    while [ ! -d $sysif ]; do
+        if [ $n -le 0 ]; then
+	    echo "Giving up"
+	    notfound=1
+	    break
+	fi
+	echo "Waiting for $ifname...$n"
+	n=`expr $n - 1`
+	sleep 1
+    done
+    if [ -d $sysif ]; then
+        cp /usr/local/etc/wpa_supplicant.conf $wpaconf
+        /usr/local/sbin/mkwpaconf <$wlanconf >>$wpaconf
+        wpa_supplicant -B -i$ifname -c$wpaconf
+        dhclient -4 -I -nw \
+                 -pf /run/dhclient.$ifname.pid \
+	         -lf /var/lib/dhcp/dhclient.$ifname.leases \
+	         $ifname
+    fi
+fi
+
 #XXX eventually this will be some form of getty
 setsid -cw bash -l
 
-umount -va
+umount -a
 sync

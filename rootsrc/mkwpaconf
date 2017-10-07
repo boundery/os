@@ -1,0 +1,25 @@
+#!/usr/bin/perl
+
+$status = 0;
+
+while (<>) {
+    $line = $_;
+    s/#.*$//;
+    s/\s+$//;
+    s/^\s+//;
+    if (m/^$/) {
+	break;
+    }
+    $word = '((?:"(?:[^"\\\\]|\\\\.)*")|(?:[^"][^\\s]*))';
+    if (!m/^$word\s+$word$/) {
+	print STDERR "Syntax error: $line";
+	$status = 1;
+	next;
+    }
+    print "network={\n";
+    print "\tssid=$1\n";
+    print "\tpsk=$2\n";
+    print "}\n";
+}
+
+exit($status);
