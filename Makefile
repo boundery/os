@@ -299,7 +299,7 @@ rootfs_clean:
 ifneq ($(shell docker images -f "dangling=true" -q),)
 	-docker rmi `docker images -f "dangling=true" -q`
 endif
-	rm -rf $(BUILDDIR)/rootfs* $(BUILDDIR)/rootfs.fakeroot
+	rm -rf $(BUILDDIR)/rootfs*
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
