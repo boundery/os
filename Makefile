@@ -262,7 +262,7 @@ DOCKER_BUILD := $(DOCKERDIR)/Dockerfile
 docker_build: $(DOCKER_BUILD)
 $(DOCKER_BUILD): $(SRCDIR)/Dockerfile.tmpl $(ROOTSRCDIR)/*
 	@mkdir -p $(DOCKERDIR)
-	@wget -qP $(DOCKERDIR)/ $(EXTRA_DEB_URLS)
+	@wget -qcP $(DOCKERDIR)/ $(EXTRA_DEB_URLS)
 	cp $(ROOTSRCDIR)/* $(DOCKERDIR)/
 	sed "s|XFROM_CONTAINERX|$(DEBIAN_CONTAINER)|" > $@ < $(SRCDIR)/Dockerfile.tmpl
 
