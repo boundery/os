@@ -94,12 +94,13 @@ SCRIPTDIR := $(SRCDIR)/script
 PATCHDIR := $(SRCDIR)/patches
 KCONFIGDIR := $(SRCDIR)/kconfig
 ROOTSRCDIR := $(SRCDIR)/rootsrc
+DEVELDIR := $(SRCDIR)/devel
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
 DOCKERDIR := $(BUILDDIR)/dockerbuild
 KERNELDIR := $(BUILDDIR)/linux
-IMGFSDIR := $(BUILDDIR)/img_fs
+IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
 
 ifeq ($(ARCH), armhf)
@@ -288,6 +289,10 @@ $(ROOTFS): $(DOCKER_BUILD)
 	touch $(ROOTFS)
 	-docker rm rootfs-$(BUILDROOTID)
 	-docker rmi rootfs-$(BUILDROOTID)
+	@[ -d $(DEVELDIR)/rootfs ] && \
+	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot \
+		   -s $(BUILDDIR)/rootfs.fakeroot \
+	    cp -r $(DEVELDIR)/rootfs/. $(ROOTFSDIR)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
 $(KERNFW_INSTALL): $(ROOTFS)
@@ -320,6 +325,8 @@ initrd_clean:
 IMG_FILES = \
 	$(INITRD) \
 	$(KERNEL) \
+	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
+	$(wildcard $(DEVELDIR)/imgfs/*)
 
 ifeq ($(ARCH), armhf)
 IMG_FILES += \
@@ -337,7 +344,7 @@ endif
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
-	mkdir -p $(IMAGESDIR)
+	@mkdir -p $(IMAGESDIR)
 	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 256 $(IMG_FILES)
 
 PHONY += rpi3_img_clean
@@ -346,9 +353,9 @@ rpi3_img_clean:
 
 PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)
-$(PC_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
-	mkdir -p $(IMAGESDIR)
-	cp `echo $(IMG_FILES) | sed -E 's|$(IMGFSDIR)/[^ ]+||'` $(IMGFSDIR)
+$(PC_IMG): $(IMG_FILES)
+	@mkdir -p $(IMAGESDIR)
+	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_FILES)) $(IMGFSDIR)
 	mkdir -p $(IMGFSDIR)/boot/grub
 	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
 	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
