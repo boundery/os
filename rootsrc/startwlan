@@ -28,7 +28,7 @@ done
 cp /usr/local/etc/wpa_supplicant.conf "$wpaconf"
 /usr/local/sbin/mkwpaconf <"$wlanconf" >>"$wpaconf"
 wpa_supplicant -B -P"/run/wpa_supplicant.$ifname.pid" -i"$ifname" -c"$wpaconf"
-dhclient -4 -I -nw \
+dhclient -4 -I \
          -pf "/run/dhclient.$ifname.pid" \
          -lf "/var/lib/dhcp/dhclient.$ifname.leases" \
          "$ifname"

@@ -18,6 +18,9 @@ if [ -f $wlanconf ]; then
     /usr/local/sbin/startwlan $ifname $wlanconf
 fi
 
+mkdir /run/openntpd
+openntpd -f/etc/openntpd/ntpd.conf -p/run/openntpd.pid -s
+
 #XXX eventually this will be some form of getty
 setsid -cw bash -l
 
