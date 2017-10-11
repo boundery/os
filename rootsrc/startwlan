@@ -1,0 +1,34 @@
+#!/bin/sh
+
+usage () {
+    echo "Usage: $0 ifname configfile" >&2
+    exit 99
+}
+
+if [ $# -ne 2 ]; then
+    usage
+fi
+
+ifname="$1"
+wlanconf="$2"
+wpaconf="/run/wpa_supplicant.$ifname.conf"
+
+sysif=/sys/class/net/$ifname
+n=5
+while [ ! -d $sysif ]; do
+    if [ $n -le 0 ]; then
+        echo "Giving up"
+        exit 1
+    fi
+    echo "Waiting for $ifname...$n"
+    n=`expr $n - 1`
+    sleep 1
+done
+
+cp /usr/local/etc/wpa_supplicant.conf "$wpaconf"
+/usr/local/sbin/mkwpaconf <"$wlanconf" >>"$wpaconf"
+wpa_supplicant -B -P"/run/wpa_supplicant.$ifname.pid" -i"$ifname" -c"$wpaconf"
+dhclient -4 -I -nw \
+         -pf "/run/dhclient.$ifname.pid" \
+         -lf "/var/lib/dhcp/dhclient.$ifname.leases" \
+         "$ifname"
