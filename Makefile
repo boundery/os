@@ -289,7 +289,7 @@ $(ROOTFS): $(DOCKER_BUILD)
 	touch $(ROOTFS)
 	-docker rm rootfs-$(BUILDROOTID)
 	-docker rmi rootfs-$(BUILDROOTID)
-	@[ -d $(DEVELDIR)/rootfs ] && \
+	@[ ! -d $(DEVELDIR)/rootfs ] || \
 	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot \
 		   -s $(BUILDDIR)/rootfs.fakeroot \
 	    cp -r $(DEVELDIR)/rootfs/. $(ROOTFSDIR)
