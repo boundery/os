@@ -1,25 +1,20 @@
-#!/usr/bin/perl
+#!/bin/sed -rf
 
-$status = 0;
+# delete comments, leading and trailing whitespace, and blank lines
+s/#.*$//
+s/\s+$//
+s/^\s+//
+/^$/d
 
-while (<>) {
-    $line = $_;
-    s/#.*$//;
-    s/\s+$//;
-    s/^\s+//;
-    if (m/^$/) {
-	break;
-    }
-    $word = '((?:"(?:[^"\\\\]|\\\\.)*")|(?:[^"][^\\s]*))';
-    if (!m/^$word\s+$word$/) {
-	print STDERR "Syntax error: $line";
-	$status = 1;
-	next;
-    }
-    print "network={\n";
-    print "\tssid=$1\n";
-    print "\tpsk=$2\n";
-    print "}\n";
-}
+# clear condition flag
+t x
+: x
 
-exit($status);
+# match <word><whitespace><word>, where <word> may be double quoted
+s/^(("([^"\\]|\\.)*")|([^"][^\s]*))\s+(("([^"\\]|\\.)*")|([^"][^\s]*))$/network={\n\tssid=\1\n\tpsk=\5\n}/
+t
+
+# didn't match, complain
+s/^/Syntax error: /
+w /proc/self/fd/2
+d
