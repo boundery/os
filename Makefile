@@ -145,6 +145,7 @@ $(KERNEL_SRC):
 	@mkdir -p $(KERNELDIR)
 	wget -qO- $(KERNEL_URL) | tar --strip-components=1 -xJ -C $(KERNELDIR)
 
+#XXX This doesn't rebuild kernel if ARCH_kconfig file changes.
 KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
 $(KERNEL_PATCH): $(KERNEL_SRC)

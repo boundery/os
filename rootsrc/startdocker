@@ -1,0 +1,18 @@
+#!/bin/sh
+
+mount -t tmpfs -o uid=0,gid=0,mode=0755 cgroup /sys/fs/cgroup
+(
+    cd /sys/fs/cgroup
+    for sys in $(awk '!/^#/ { if ($4 == 1) print $1 }' /proc/cgroups); do
+	mkdir -p $sys
+	if ! mountpoint -q $sys; then
+	    if ! mount -n -t cgroup -o $sys cgroup $sys; then
+		rmdir $sys || true
+	    fi
+	fi
+    done
+)
+
+#DOCKER_RAMDISK tells it not to pivot_root into the container, since we're
+# running out of an initramfs.
+DOCKER_RAMDISK=1 dockerd -p /var/run/dockerd.pid &
