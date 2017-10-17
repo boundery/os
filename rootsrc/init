@@ -12,19 +12,13 @@ echo 5 >/proc/sys/kernel/panic
 
 modprobe brcmfmac
 
-ifname=wlan0
-wlanconf=/boot/$ifname.conf
-if [ -f $wlanconf ]; then
-    /usr/local/sbin/startwlan $ifname $wlanconf
-fi
-
-mkdir /run/openntpd
-openntpd -f/etc/openntpd/ntpd.conf -p/run/openntpd.pid -s
+(netd >/dev/null 2>&1 &)
 
 /usr/local/sbin/startdocker
 
 #XXX eventually this will be some form of getty
 setsid -cw bash -l
 
+netd -k
 umount -a
 sync

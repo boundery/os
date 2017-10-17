@@ -1,0 +1,438 @@
+#!/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+
+#
+# Global variables
+#
+
+progname="${0##*/}"
+dflag=
+kflag=
+nflag=
+pidfile=/run/netd.pid
+qflag=
+vflag=
+
+ifs_known=
+ifs_running=
+ifs_connected=
+ntpd_running=
+
+
+#
+# Main
+#
+
+main() {
+    parseargs "$@" || return 99
+
+    if [ $kflag ]; then
+        dflag=1
+        killall
+        return 0
+    fi
+
+    trap "rm -f $pidfile; exit" EXIT HUP INT TERM
+    echo $$ >"$pidfile"
+
+    verbose "starting"
+
+    ifs_known=$(set_emptyset)
+    ifs_running=$(set_emptyset)
+    ifs_connected=$(set_emptyset)
+
+    if_up lo
+
+    while true; do
+
+        # proceses added and removed interfaces
+        ifs="$(get_ifs eth) $(get_ifs wlan)"
+        debug curr ifs "<$ifs>"
+        for if in $ifs; do
+            if set_isin "$ifs_known" $if; then
+                continue
+            fi
+            if_add $if
+        done
+        for if in $ifs_known; do
+            if ! set_isin "$ifs" $if; then
+                continue
+            fi
+            if_delete $if
+        done
+        debug ifs_known "<$ifs_known>"
+
+        # process changes in running state
+        for if in $ifs_known; do
+            if set_isin "$ifs_running" $if; then
+                if ! if_isrunning $if; then
+                    if_setnotrunning $if
+                fi
+            else
+                if if_isrunning $if; then
+                    if_setrunning $if
+                fi
+            fi
+        done
+        debug ifs_running "<$ifs_running>"
+
+        # for running ifs, note completion of dhcp request
+        for if in $ifs_running; do
+            if ! set_isin "$ifs_connected" $if; then
+                if if_isconnected $if; then
+                    if_setconnected $if
+                fi
+            fi
+        done
+        debug ifs_connected "<$ifs_connected>"
+
+        # if we lose the default route, try to get it back
+        if ! set_isempty "$ifs_connected"; then
+            if ! ip_hasdefaultroute; then
+                if_restartdhclient
+            fi
+        fi
+
+        # start ntpd once we get a default route
+        if [ ! "$ntpd_running" ]; then
+            if ip_hasdefaultroute; then
+                ntpd_start
+            fi
+        fi
+
+        sleep 2
+
+    done
+
+    return 0
+}
+
+parseargs() {
+    while getopts dknp:qv opt; do
+        case $opt in
+        d)
+            dflag=1
+            ;;
+        k)
+            kflag=1
+            ;;
+        n)
+            nflag=1
+            ;;
+        p)
+            pidfile=$OPTARG
+            ;;
+        q)
+            qflag=1
+            ;;
+        v)
+            vflag=1
+            ;;
+        \?)
+            usage
+            return 1
+            ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
+    # just ignore the rest of argv
+
+    return 0
+}
+
+usage() {
+    echo "Usage: $progname [-dknqv] [-p pid-file]" >&2
+    echo "    -d   debug, log to stdout, log more" >&2
+    echo "    -k   kill netd and all dhclient, wpa_supplicant, ntpd" >&2
+    echo "    -n   dry run, don't execute any action" >&2
+    echo "    -p   use pid-file" >&2
+    echo "    -q   quiet, log less" >&2
+    echo "    -v   verbose, log more" >&2
+}
+
+killall() {
+    for pidfile in /run/netd.pid /run/openntpd.pid \
+                   /run/dhclient.*.pid /run/wpa_supplicant.*.pid; do
+        [ -f $pidfile ] || continue
+        local pid=$(cat $pidfile)
+        local prog=${pidfile#/run/}
+        prog=${prog%.pid}
+        info "killing $prog $pid"
+        run kill $pid
+        run rm -f $pidfile
+    done
+}
+
+
+#
+# Network functions
+#
+
+get_ifs() {
+    local ifs
+
+    ifs=$(cd /sys/class/net; echo $1[0-9]*)
+    if [ x"$ifs"x = x$1[0-9]*x ]; then
+        ifs=""
+    fi
+    # XXX filter out special characters so list is well behaved
+    echo $ifs
+}
+
+if_add() {
+    local if=$1
+
+    verbose add interface $if
+    case $if in
+    eth*)
+	if_up $if
+	;;
+    wlan*)
+	if_startwpa $if
+	;;
+    esac
+    ifs_known="$(set_add "$ifs_known" $if)"
+}
+
+if_delete() {
+    local if=$1
+
+    verbose delete interface $if
+    if set_isin "$if_running" $if; then
+        if_setnotrunning $if
+    fi
+    ifs_known="$(set_delete "$ifs_known" $if)"
+}
+
+if_setrunning() {
+    local if=$1
+
+    info starting dhclient on $if
+    # flush addresses, it helps us know later when dhcp succeeds
+    # see also if_setnotrunning
+    run ip -4 address flush dev $if
+    if_startdhclient $if
+    ifs_running="$(set_add "$ifs_running" $if)"
+}
+
+if_setnotrunning() {
+    local if=$1
+
+    # If a link goes down (e.g., gets unplugged) we stop dhclient and
+    # clear the ip addresse(s) on the interface.
+    # Clearing addresses does two things: it clears the routing table,
+    # and it lets us know later (when the interface comes back and
+    # we start dhclient again) that dhcp succeeds.
+    # We also clear addresses in if_setrunning, in case they were left
+    # there when we started.
+
+    info stopping dhclient and clearing addresses on $if
+    stop dhclient $if
+    run ip -4 address flush dev $if
+    if_setnotconnected $if
+    ifs_running="$(set_delete "$ifs_running" $if)"
+}
+
+if_setconnected() {
+    local if=$1
+
+    info acquired ip addr on $if
+    ifs_connected="$(set_add "$ifs_connected" $if)"
+}
+
+if_setnotconnected() {
+    local if=$1
+
+    ifs_connected="$(set_delete "$ifs_connected" $if)"
+}
+
+if_isup() {
+    local if=$1
+
+    local x="$(ifconfig $if 2>/dev/null)"
+    [ -z "${x##*[<,]UP[,>]*}" ]
+    return $?
+}
+
+if_isrunning() {
+    local if=$1
+
+    local x="$(ifconfig $if 2>/dev/null)"
+    [ -z "${x##*[<,]RUNNING[,>]*}" ]
+    return $?
+}
+
+if_isconnected() {
+    local if=$1
+
+    local x="$(ip -4 address show dev $if 2>/dev/null)"
+    [ -n "$x" -a -z "${x##* inet [0-9]*}" ]
+    return $?
+}
+
+if_up() {
+    local if=$1
+
+    info bringing up $if
+    run ifconfig $if up
+}
+
+if_startwpa() {
+    local if=$1
+
+    local conf=/boot/$if.conf
+    local wpaconf=/run/wpa_supplicant.$if.conf
+    local pidfile=$(pidfile wpa_supplicant $if)
+
+    run cp /usr/local/etc/wpa_supplicant.conf $wpaconf
+    runa $wpaconf mkwpaconf <$conf
+    run wpa_supplicant -B -P$pidfile -i$if -c$wpaconf
+}
+
+if_startdhclient() {
+    local if=$1
+
+    run dhclient -4 -I -nw \
+                 -pf $(pidfile dhclient $if) \
+                 -lf /var/lib/dhcp/dhclient.$if.leases \
+                 $if
+}
+
+if_restartdhclient() {
+    for if in $ifs_connected; do
+        info restarting dhclient on $if
+        stop dhclient $if
+        if_startdhclient $if
+    done
+}
+
+ip_hasdefaultroute() {
+    [ "$(ip route list exact 0/0)" ]
+}
+
+ntpd_start() {
+    info starting ntpd
+    run mkdir -p /run/openntpd
+    run openntpd -f/etc/openntpd/ntpd.conf -p/run/openntpd.pid -s
+    ntpd_running=1
+}
+
+
+#
+# Process management
+#
+
+run() {
+    verbose "$@"
+    [ "$nflag" ] || "$@"
+}
+
+runa() {
+    local out=$1
+    shift
+
+    verbose "$@" ">>$out"
+    [ "$nflag" ] || "$@" >>$out
+}
+
+stop() {
+    local daemon=$1
+    local if=$2
+
+    pidfile=$(pidfile $daemon $if)
+    run kill $(cat $pidfile)
+    run rm -f $pidfile
+}
+
+pidfile() {
+    local daemon=$1
+    local if=$2
+
+    echo /run/$daemon${if:+.$if}.pid
+}
+
+
+#
+# Set operations
+#
+# Elements cannot contain whitespace, which is also what the rest
+# of this program assumes.
+#
+
+set_emptyset() {
+    echo " "
+}
+
+set_isempty() {
+    s="$1"
+
+    [ -n "${s##*[! ]*}" ]
+    return $?
+}
+
+set_isin() {
+    s="$1"
+    x="$2"
+
+    [ -z "${s##* $x *}" ]
+    return $?
+}
+
+set_add() {
+    s="$1"
+    x="$2"
+
+    echo "$s$x "
+}
+
+set_delete() {
+    s="$1"
+    x="$2"
+
+    echo "${s%% $x *} ${s##* $x }"
+}
+
+
+#
+# Logging and debugging
+#
+
+log() {
+    if [ "$dflag" ]; then
+        echo "$*"
+        return
+    fi
+    prio="$1"
+    shift
+    logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
+}
+
+error() {
+    log err "$@"
+}
+
+warning() {
+    log warning "$@"
+}
+
+info() {
+    [ "$qflag" ] || log info "$@"
+}
+
+debug() {
+    [ "$dflag" ] && log debug "$@"
+}
+
+verbose() {
+    [ "$vflag" ] && log info "$@"
+}
+
+
+#
+# Run
+#
+
+main "$@"
+exit $?

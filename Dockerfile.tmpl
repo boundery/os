@@ -9,12 +9,11 @@ RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
            kmod \
            net-tools \
-           ifupdown \
            isc-dhcp-client \
            inetutils-ping \
            dnsutils \
            wpasupplicant \
-	   openntpd \
+           openntpd \
            vim \
            nvi \
            ca-certificates \
@@ -26,8 +25,7 @@ RUN    apt-get update \
 
 COPY init /
 COPY fstab /etc/
-COPY interfaces /etc/network/
 COPY wpa_supplicant.conf /usr/local/etc
 COPY mkwpaconf /usr/local/sbin
-COPY startwlan /usr/local/sbin
 COPY startdocker /usr/local/sbin
+COPY netd /usr/local/sbin
