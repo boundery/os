@@ -287,6 +287,11 @@ $(ROOTFS): $(DOCKER_BUILD)
 	  tar xf - -C $(ROOTFSDIR)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  $(SCRIPTDIR)/mkdevnodes $(ROOTFSDIR)
+	# docker exports these files empty with mode 755, so fix them up
+	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
+	  sh -c 'cp --preserve=mode \
+	            $(ROOTSRCDIR)/hostname $(ROOTSRCDIR)/hosts \
+	            $(ROOTFSDIR)/etc'
 	touch $(ROOTFS)
 	-docker rm rootfs-$(BUILDROOTID)
 	-docker rmi rootfs-$(BUILDROOTID)

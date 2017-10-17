@@ -5,6 +5,8 @@ sleep 2 # wait a little for devices to appear
 mount /proc
 mount -a
 
+hostname `cat /etc/hostname`
+
 syslogd -C64
 klogd -c5
 

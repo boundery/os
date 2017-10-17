@@ -1,0 +1,18 @@
+# This is a dhclient-exit-hook script.
+# It sets the hostname once, when the server provides us with one.
+
+if [ "$reason" != BOUND -a "$reason" != RENEW -a \
+     "$reason" != REBIND -a "$reason" != REBOOT ]; then
+     return
+fi
+
+if [ -z "$new_host_name" ]; then
+	return
+fi
+
+# override current hostname only if it's the default
+if [ x"$(hostname)"x != x"$(cat /etc/hostname)"x ]; then
+	return
+fi
+
+hostname $new_host_name
