@@ -121,7 +121,7 @@ BUILDROOTID := $(shell echo $(SRCDIR) | sha1sum | cut -b1-10)
 #Make sure binfmt is configured properly.
 ifneq ($(shell echo '50c12d79f40fc1cacc4819ae9bac6bb1  /proc/sys/fs/binfmt_misc/qemu-arm' | \
 	md5sum -c --quiet; echo $$?),0)
-$(error Run "sudo scripts/qemu-arm-static.sh")
+$(error Run "sudo script/qemu-arm-static.sh")
 endif
 
 #########
