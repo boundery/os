@@ -346,7 +346,7 @@ RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
-	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 256 $(IMG_FILES)
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 128 $(IMG_FILES)
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:
