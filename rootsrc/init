@@ -1,5 +1,13 @@
 #!/bin/sh
 
+# Set PATH.
+# This does two things:
+#     1. Set the path for ourselves.
+#     2. Give subprocesses a path.  We are started without a path.
+#        While dash provides a default path, it is not exported.
+#        So do that here.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 sleep 2 # wait a little for devices to appear
 
 mount /proc
@@ -16,7 +24,7 @@ modprobe brcmfmac
 
 (netd >/dev/null 2>&1 &)
 
-/usr/local/sbin/startdocker
+startdocker
 
 #XXX eventually this will be some form of getty
 setsid -cw bash -l
