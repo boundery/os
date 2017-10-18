@@ -22,7 +22,7 @@ echo 5 >/proc/sys/kernel/panic
 
 modprobe brcmfmac
 
-(netd >/dev/null 2>&1 &)
+(netd &)
 
 startdocker
 

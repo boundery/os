@@ -6,6 +6,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 #
 # Global variables
 #
+# No, most of them don't have to be declared.
+# It's just nice to have a list here.
+#
 
 progname="${0##*/}"
 dflag=
@@ -18,7 +21,7 @@ vflag=
 ifs_known=
 ifs_running=
 ifs_connected=
-ntpd_running=
+daemons_running=
 
 
 #
@@ -29,7 +32,7 @@ main() {
     parseargs "$@" || return 99
 
     if [ $kflag ]; then
-        dflag=1
+        local dflag=1
         killall
         return 0
     fi
@@ -37,7 +40,7 @@ main() {
     trap "rm -f $pidfile; exit" EXIT HUP INT TERM
     echo $$ >"$pidfile"
 
-    verbose "starting"
+    info "starting"
 
     ifs_known=$(set_emptyset)
     ifs_running=$(set_emptyset)
@@ -48,8 +51,8 @@ main() {
     while true; do
 
         # proceses added and removed interfaces
-        ifs="$(get_ifs eth) $(get_ifs wlan)"
-        debug curr ifs "<$ifs>"
+        local ifs="$(get_ifs eth) $(get_ifs wlan)"
+        local if
         for if in $ifs; do
             if set_isin "$ifs_known" $if; then
                 continue
@@ -62,7 +65,6 @@ main() {
             fi
             if_delete $if
         done
-        debug ifs_known "<$ifs_known>"
 
         # process changes in running state
         for if in $ifs_known; do
@@ -76,7 +78,6 @@ main() {
                 fi
             fi
         done
-        debug ifs_running "<$ifs_running>"
 
         # for running ifs, note completion of dhcp request
         for if in $ifs_running; do
@@ -86,7 +87,6 @@ main() {
                 fi
             fi
         done
-        debug ifs_connected "<$ifs_connected>"
 
         # if we lose the default route, try to get it back
         if ! set_isempty "$ifs_connected"; then
@@ -95,10 +95,10 @@ main() {
             fi
         fi
 
-        # start ntpd once we get a default route
-        if [ ! "$ntpd_running" ]; then
+        # start daemons once we get a default route
+        if [ ! $daemons_running ]; then
             if ip_hasdefaultroute; then
-                ntpd_start
+                net_startdaemons
             fi
         fi
 
@@ -112,25 +112,25 @@ main() {
 parseargs() {
     while getopts dknp:qv opt; do
         case $opt in
-        d)
+        (d)
             dflag=1
             ;;
-        k)
+        (k)
             kflag=1
             ;;
-        n)
+        (n)
             nflag=1
             ;;
-        p)
+        (p)
             pidfile=$OPTARG
             ;;
-        q)
+        (q)
             qflag=1
             ;;
-        v)
+        (v)
             vflag=1
             ;;
-        \?)
+        (\?)
             usage
             return 1
             ;;
@@ -143,25 +143,28 @@ parseargs() {
 }
 
 usage() {
-    echo "Usage: $progname [-dknqv] [-p pid-file]" >&2
-    echo "    -d   debug, log to stdout, log more" >&2
-    echo "    -k   kill netd and all dhclient, wpa_supplicant, ntpd" >&2
-    echo "    -n   dry run, don't execute any action" >&2
-    echo "    -p   use pid-file" >&2
-    echo "    -q   quiet, log less" >&2
-    echo "    -v   verbose, log more" >&2
+    {
+    echo "Usage: $progname [-dknqv] [-p pid-file]"
+    echo "    -d   debug, log to stdout, log more"
+    echo "    -k   kill netd and all dhclient, wpa_supplicant, daemons"
+    echo "    -n   dry run, don't execute any action"
+    echo "    -p   use pid-file"
+    echo "    -q   quiet, log less"
+    echo "    -v   verbose, log more"
+    } >&2
 }
 
 killall() {
-    for pidfile in /run/netd.pid /run/openntpd.pid \
-                   /run/dhclient.*.pid /run/wpa_supplicant.*.pid; do
-        [ -f $pidfile ] || continue
-        local pid=$(cat $pidfile)
-        local prog=${pidfile#/run/}
+    local pidf
+    for pidf in $pidfile /run/openntpd.pid \
+                /run/dhclient.*.pid /run/wpa_supplicant.*.pid; do
+        [ -f $pidf ] || continue
+        local pid=$(cat $pidf)
+        local prog=${pidf#/run/}
         prog=${prog%.pid}
         info "killing $prog $pid"
         run kill $pid
-        run rm -f $pidfile
+        run rm -f $pidf
     done
 }
 
@@ -171,10 +174,10 @@ killall() {
 #
 
 get_ifs() {
-    local ifs
+    local prefix=$1
 
-    ifs=$(cd /sys/class/net; echo $1[0-9]*)
-    if [ x"$ifs"x = x$1[0-9]*x ]; then
+    local ifs=$(cd /sys/class/net; echo $prefix[0-9]*)
+    if [ x"$ifs"x = x$prefix[0-9]*x ]; then
         ifs=""
     fi
     # XXX filter out special characters so list is well behaved
@@ -186,12 +189,12 @@ if_add() {
 
     verbose add interface $if
     case $if in
-    eth*)
-	if_up $if
-	;;
-    wlan*)
-	if_startwpa $if
-	;;
+    (eth*)
+        if_up $if
+        ;;
+    (wlan*)
+        if_startwpa $if
+        ;;
     esac
     ifs_known="$(set_add "$ifs_known" $if)"
 }
@@ -286,8 +289,9 @@ if_startwpa() {
     local wpaconf=/run/wpa_supplicant.$if.conf
     local pidfile=$(pidfile wpa_supplicant $if)
 
+    info starting wpa_supplicant on $if
     run cp /usr/local/etc/wpa_supplicant.conf $wpaconf
-    runa $wpaconf mkwpaconf <$conf
+    run -i$conf -ao$wpaconf mkwpaconf
     run wpa_supplicant -B -P$pidfile -i$if -c$wpaconf
 }
 
@@ -301,6 +305,7 @@ if_startdhclient() {
 }
 
 if_restartdhclient() {
+    local if
     for if in $ifs_connected; do
         info restarting dhclient on $if
         stop dhclient $if
@@ -312,11 +317,15 @@ ip_hasdefaultroute() {
     [ "$(ip route list exact 0/0)" ]
 }
 
-ntpd_start() {
+net_startdaemons() {
     info starting ntpd
     run mkdir -p /run/openntpd
-    run openntpd -f/etc/openntpd/ntpd.conf -p/run/openntpd.pid -s
-    ntpd_running=1
+    # background because -s causes it to block for an answer
+    run openntpd -f/etc/openntpd/ntpd.conf -p/run/openntpd.pid -s &
+
+    # yes, there is only one network daemon so far
+
+    daemons_running=1
 }
 
 
@@ -324,24 +333,63 @@ ntpd_start() {
 # Process management
 #
 
+#
+# Run a command with stdin, stdout, stderr redirected
+# from/to /dev/null, unless otherwise specified:
+#     -i ifile   redirect stdin from ifile
+#     -o ofile   redirect stdout to ofile
+#     -a         append output (>> instead of >)
+# stderr always goes to /dev/null.
+#
 run() {
-    verbose "$@"
-    [ "$nflag" ] || "$@"
-}
+    local append=""
+    local ifile=""
+    local ofile=""
 
-runa() {
-    local out=$1
-    shift
+    while getopts ai:o: opt; do
+        case $opt in
+        (a)
+            append=1
+            ;;
+        (i)
+            ifile=$OPTARG
+            ;;
+        (o)
+            ofile=$OPTARG
+            ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
 
-    verbose "$@" ">>$out"
-    [ "$nflag" ] || "$@" >>$out
+    local suf=""
+    if [ -n "$ifile" ]; then
+        suf=" <$ifile"
+    fi
+    if [ -n "$ofile" ]; then
+        if [ $append ]; then
+            suf="$suf >>$ofile"
+        else
+            suf="$suf >$ofile"
+        fi
+    fi
+    verbose "$*$suf"
+
+    if [ ! $nflag ]; then
+        [ -z "$ifile" ] && ifile=/dev/null
+        [ -z "$ofile" ] && ofile=/dev/null
+        if [ $append ]; then
+            "$@" <"$ifile" >>"$ofile" 2>/dev/null
+        else
+            "$@" <"$ifile" >"$ofile" 2>/dev/null
+        fi
+    fi
 }
 
 stop() {
     local daemon=$1
     local if=$2
 
-    pidfile=$(pidfile $daemon $if)
+    local pidfile=$(pidfile $daemon $if)
     run kill $(cat $pidfile)
     run rm -f $pidfile
 }
@@ -366,30 +414,30 @@ set_emptyset() {
 }
 
 set_isempty() {
-    s="$1"
+    local s="$1"
 
     [ -n "${s##*[! ]*}" ]
     return $?
 }
 
 set_isin() {
-    s="$1"
-    x="$2"
+    local s="$1"
+    local x="$2"
 
     [ -z "${s##* $x *}" ]
     return $?
 }
 
 set_add() {
-    s="$1"
-    x="$2"
+    local s="$1"
+    local x="$2"
 
     echo "$s$x "
 }
 
 set_delete() {
-    s="$1"
-    x="$2"
+    local s="$1"
+    local x="$2"
 
     echo "${s%% $x *} ${s##* $x }"
 }
@@ -400,12 +448,13 @@ set_delete() {
 #
 
 log() {
+    local prio="$1"
+    shift
+
     if [ "$dflag" ]; then
         echo "$*"
         return
     fi
-    prio="$1"
-    shift
     logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
 }
 
