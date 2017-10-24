@@ -24,7 +24,7 @@ UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
 KERNFW_URL=http://github.com/RPi-Distro/firmware-nonfree/archive/master/brcm80211/brcm.tar.gz
 
-DOCKER_URL=https://download.docker.com/linux/debian/dists/stretch/pool/stable/$(ARCH)/docker-ce_17.06.2~ce-0~debian_$(ARCH).deb
+DOCKER_URL=https://download.docker.com/linux/debian/dists/stretch/pool/stable/$(ARCH)/docker-ce_17.09.0~ce-0~debian_$(ARCH).deb
 EXTRA_DEB_URLS="$(DOCKER_URL)"
 
 ######################################################
