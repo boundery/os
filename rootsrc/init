@@ -6,29 +6,28 @@
 #     2. Give subprocesses a path.  We are started without a path.
 #        While dash provides a default path, it is not exported.
 #        So do that here.
+
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-sleep 2 # wait a little for devices to appear
+# Wait a little for devices to appear.
+sleep 2
 
+# Mount only the necessary filesystems.
+# We need /proc to mount anything, /dev to mount /boot,
+# and /boot for the new root image.
+# swich_root complains if /sys or /run is not mounted.
 mount /proc
-mount -a
+# XXX debugging: do this to skip switch_root
+#exec /init1
+mount /dev
+mount /boot
+mount /sys
+mount /run
 
-hostname `cat /etc/hostname`
-
-syslogd -C64
-klogd -c5
-
-echo 5 >/proc/sys/kernel/panic
-
-modprobe brcmfmac
-
-(netd &)
-
-startdocker
-
-#XXX eventually this will be some form of getty
-setsid -cw bash -l
-
-netd -k
-umount -a
-sync
+# Switch to the real root.
+mkdir /newroot
+mount -tsquashfs /boot/root.sqfs /newroot
+mount --move /boot /newroot/boot
+# XXX debugging: leave old root visible under the new root
+#mount --bind / /newroot/mnt
+exec switch_root /newroot /init1

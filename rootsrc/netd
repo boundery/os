@@ -300,7 +300,7 @@ if_startdhclient() {
 
     run dhclient -4 -I -nw \
                  -pf $(pidfile dhclient $if) \
-                 -lf /var/lib/dhcp/dhclient.$if.leases \
+                 -lf /run/dhclient.$if.leases \
                  $if
 }
 
@@ -319,7 +319,7 @@ ip_hasdefaultroute() {
 
 net_startdaemons() {
     info starting ntpd
-    run mkdir -p /run/openntpd
+    run mkdir -p /run/openntpd/db /run/openntpd/run
     # background because -s causes it to block for an answer
     run openntpd -f/etc/openntpd/ntpd.conf -p/run/openntpd.pid -s &
 

@@ -286,12 +286,7 @@ $(ROOTFS): $(DOCKER_BUILD)
 	  fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
 	  tar xf - -C $(ROOTFSDIR)
 	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(SCRIPTDIR)/mkdevnodes $(ROOTFSDIR)
-	# docker exports these files empty with mode 755, so fix them up
-	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  sh -c 'cp --preserve=mode \
-	            $(ROOTSRCDIR)/hostname $(ROOTSRCDIR)/hosts \
-	            $(ROOTFSDIR)/etc'
+	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(ROOTFSDIR)
 	touch $(ROOTFS)
 	-docker rm rootfs-$(BUILDROOTID)
 	-docker rmi rootfs-$(BUILDROOTID)
@@ -325,11 +320,24 @@ PHONY += initrd_clean
 initrd_clean:
 	rm -f $(INITRD)
 
+SQUASHFS := $(IMGFSDIR)/root.sqfs
+squashfs: $(SQUASHFS)
+$(SQUASHFS): $(ROOTFS) $(INITRD)
+	@mkdir -p $(IMGFSDIR)
+	@rm -f $(SQUASHFS)
+	fakeroot -i $(BUILDDIR)/rootfs.fakeroot \
+	         mksquashfs $(ROOTFSDIR) $(SQUASHFS)
+
+PHONY += squashfs_clean
+squashfs_clean:
+	rm -f $(SQUASHFS)
+
 ###############
 # Image Targets
 
 IMG_FILES = \
 	$(INITRD) \
+	$(SQUASHFS) \
 	$(KERNEL) \
 	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
 	$(wildcard $(DEVELDIR)/imgfs/*)
@@ -351,7 +359,7 @@ RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
-	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 128 $(IMG_FILES)
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMG_FILES)
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:

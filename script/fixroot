@@ -1,0 +1,40 @@
+#/bin/sh -e
+
+if [ $# -ne 2 -o ! -d "$1" -o ! -d "$2" ]; then
+   echo Usage: $0 rootsrcdir rootfs >&2
+   exit 99
+fi
+rootsrc="$1"
+rootfs="$2"
+
+# make device nodes
+mknod "$rootfs/dev/full" c 1 7
+mknod "$rootfs/dev/null" c 1 3
+mknod "$rootfs/dev/random" c 1 8
+mknod "$rootfs/dev/tty" c 5 0
+mknod "$rootfs/dev/urandom" c 1 9
+mknod "$rootfs/dev/zero" c 1 5
+mknod "$rootfs/dev/ttyS0" c 4 64
+mknod "$rootfs/dev/ttyS1" c 4 65
+mknod "$rootfs/dev/ttyS2" c 4 66
+mknod "$rootfs/dev/ttyS3" c 4 67
+mknod "$rootfs/dev/console" c 5 1
+mknod "$rootfs/dev/kmsg" c 1 11
+mknod "$rootfs/dev/tty0" c 4 0
+mknod "$rootfs/dev/tty1" c 4 0
+mknod "$rootfs/dev/tty2" c 4 0
+mknod "$rootfs/dev/tty3" c 4 0
+
+# docker exports these files empty with mode 755, so fix them up
+cp --preserve=mode $rootsrc/hostname $rootfs/etc
+cp --preserve=mode $rootsrc/hosts $rootfs/etc
+
+# link mutable files to /run for read-only root
+# XXX some of these should be persistent
+ln -sf ../run/resolv.conf $rootfs/etc/resolv.conf
+rm -rf $rootfs/var/lib/openntpd
+ln -s ../../run/openntpd $rootfs/var/lib/openntpd
+
+# point /var/tmp to /tmp so they can share the same tmpfs
+rm -rf $rootfs/var/tmp
+ln -s ../tmp $rootfs/var/tmp
