@@ -36,3 +36,5 @@ mformat -i$imgfile@@1M -s32 -h64 -t$partsize
 if [ -n "$infiles" ]; then
     mcopy -i$imgfile@@1M -vs $infiles ::
 fi
+
+mlabel -i$imgfile@@1M ::ISOIMAGE
