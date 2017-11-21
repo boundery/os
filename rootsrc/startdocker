@@ -15,7 +15,4 @@ if ! grep -q '^cgroup /sys/fs/cgroup tmpfs' < /proc/mounts; then
     )
 fi
 
-#DOCKER_RAMDISK tells it not to pivot_root into the container, since we're
-# running out of an initramfs.
-DOCKER_RAMDISK=1 dockerd -p /var/run/dockerd.pid 2>&1 | \
-                 logger -p daemon.info -t dockerd &
+dockerd -p /var/run/dockerd.pid 2>&1 | logger -p daemon.info -t dockerd &
