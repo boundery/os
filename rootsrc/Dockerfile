@@ -1,9 +1,8 @@
-FROM XFROM_CONTAINERX
+ARG FROM_CONTAINER
+
+FROM ${FROM_CONTAINER}
 
 COPY *.deb /debs/
-
-#XXX Would be better to make the list of packages an ARG or file in the
-#    dockerdir so that this whole repo could all be generic...
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends \

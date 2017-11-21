@@ -24,9 +24,6 @@ UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
 KERNFW_URL=http://github.com/RPi-Distro/firmware-nonfree/archive/master/brcm80211/brcm.tar.gz
 
-DOCKER_URL=https://download.docker.com/linux/debian/dists/stretch/pool/stable/$(ARCH)/docker-ce_17.09.0~ce-0~debian_$(ARCH).deb
-EXTRA_DEB_URLS="$(DOCKER_URL)"
-
 ######################################################
 # Pick/validate what target architectures we're building for.
 
@@ -98,7 +95,7 @@ DEVELDIR := $(SRCDIR)/devel
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
-DOCKERDIR := $(BUILDDIR)/dockerbuild
+EXTRADEBDIR := $(BUILDDIR)/extradebs
 KERNELDIR := $(BUILDDIR)/linux
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
@@ -260,27 +257,32 @@ uboot_env_clean:
 
 endif # }
 
-DOCKER_BUILD := $(DOCKERDIR)/Dockerfile
-docker_build: $(DOCKER_BUILD)
-$(DOCKER_BUILD): $(SRCDIR)/Dockerfile.tmpl $(ROOTSRCDIR)/*
-	@mkdir -p $(DOCKERDIR)
-	@wget -qcP $(DOCKERDIR)/ $(EXTRA_DEB_URLS)
-	cp $(ROOTSRCDIR)/* $(DOCKERDIR)/
-	sed "s|XFROM_CONTAINERX|$(DEBIAN_CONTAINER)|" > $@ < $(SRCDIR)/Dockerfile.tmpl
+EXTRA_DEB_URLS=$(SRCDIR)/extra_deb_urls
+EXTRA_DEBS := $(shell $(SCRIPTDIR)/urls-to-files $(ARCH) $(EXTRADEBDIR) <$(EXTRA_DEB_URLS))
+extra_debs: $(EXTRA_DEBS)
+$(EXTRA_DEBS): $(EXTRA_DEB_URLS)
+	@mkdir -p $(EXTRADEBDIR)
+	@rm -f $(EXTRADEBDIR)/*
+	wget -qcP $(EXTRADEBDIR)/ \
+	  $(shell sed 's/XARCHX/$(ARCH)/g' <$(EXTRA_DEB_URLS))
+	@touch $(EXTRA_DEBS)
 
-PHONY += docker_build_clean
-docker_build_clean:
-	rm -rf $(DOCKERDIR)
+PHONY += extra_debs_clean
+extra_debs_clean:
+	rm -rf $(EXTRADEBDIR)
 
 #We have to start a container to get a flattened "export" of the container,
 # rather than the layered "save" of the image.
 ROOTFS := $(ROOTFSDIR)/init
 rootfs: $(ROOTFS)
-$(ROOTFS): $(DOCKER_BUILD)
+$(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS)
 	@rm -rf $(BUILDDIR)/rootfs*
 	@mkdir -p $(ROOTFSDIR)
-	docker build $(DOCKER_BUILD_PROXY) --force-rm=true -t \
-	  rootfs-$(BUILDROOTID) --iidfile=$(DOCKER_ROOTFS) $(DOCKERDIR)
+	tar zcf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
+	  docker build $(DOCKER_BUILD_PROXY) \
+	  --build-arg FROM_CONTAINER=$(DEBIAN_CONTAINER) \
+	  --build-arg EXTRADEBDIR=$(EXTRADEBDIR) \
+	  --force-rm=true -t rootfs-$(BUILDROOTID) -
 	docker run --name rootfs-$(BUILDROOTID) rootfs-$(BUILDROOTID) echo
 	docker export rootfs-$(BUILDROOTID) | \
 	  fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
