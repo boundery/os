@@ -337,8 +337,8 @@ basesquashfs_clean:
 	rm -f $(BASESQUASHFS)
 
 OSSQUASHFS := $(IMGFSDIR)/osroot.sqfs
-ossquashfs: $(OSSQUASHFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
-$(OSSQUASHFS): $(ROOTFS)
+ossquashfs: $(OSSQUASHFS)
+$(OSSQUASHFS): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
 	@mkdir -p $(IMGFSDIR)/osroot
 	@rm -rf $(OSSQUASHFS)
