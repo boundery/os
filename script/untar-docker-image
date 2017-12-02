@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import shutil
+import tarfile
+import json
+import io
+import hashlib
+
+if len(sys.argv) != 2:
+    print("Usage: %s extract_dir" % sys.argv[0], file=sys.stderr)
+    sys.exit(99)
+outpath = sys.argv[1]
+
+class SHA256Pipe(io.RawIOBase):
+    def __init__(self, fd):
+        self.fd = fd
+        self.hasher = hashlib.sha256()
+    def readinto(self, b):
+        l = self.fd.readinto(b)
+        if l > 0:
+            self.hasher.update(b[0:l])
+        return l
+    def hexdigest(self):
+        return self.hasher.hexdigest()
+
+def merge_layer(layer, base):
+    #print("DEBUG About to walk %s" % layer)
+
+    to_rmdir = []
+    for subdir in os.walk(layer, topdown=True):
+        #print("DEBUG %s" % subdir[0])
+        
+        for f in subdir[2]:
+            if f.startswith(".wh."):
+                #print("DEBUG Whiting out %s" % f[4:])
+                os.unlink(os.path.join(subdir[0], f))
+
+                lside = os.path.join(subdir[0], f[4:])
+                bside = os.path.join(base + subdir[0][len(layer):], f[4:])
+                for i in lside, bside:
+                    if os.path.lexists(i):
+                        if os.path.isdir(i):
+                            shutil.rmtree(i)
+                        else:
+                            os.unlink(i)
+            else:
+                #print("DEBUG Moving file: %s" % os.path.join(subdir[0], f))
+                os.rename(os.path.join(subdir[0], f),
+                          os.path.join(base + subdir[0][len(layer):], f))
+
+        for d in subdir[1]:
+            #print("DEBUG Moving dir %s" % os.path.join(subdir[0], d))
+            lside = os.path.join(subdir[0], d)
+            bside = os.path.join(base + subdir[0][len(layer):], d)
+            if os.path.exists(bside): #Update user/group/perms
+                lstat = os.stat(lside)
+                #Linux doesn't have chflags, but it probably doesn't matter.
+                #os.chflags(bside, lstat.st_flags)
+                os.chmod(bside, lstat.st_mode)
+                os.chown(bside, uid=lstat.st_uid, gid=lstat.st_gid)
+                #Can't set ctime.  Does it matter?
+                os.utime(bside, ns=(lstat.st_atime_ns, lstat.st_mtime_ns))
+                to_rmdir.append(lside)
+            else:
+                os.rename(lside, bside)
+
+    #Remove dups and sort by path length.
+    to_rmdir = sorted(set(to_rmdir), key=len, reverse=True)
+    for d in to_rmdir:
+        os.rmdir(d)
+
+jsonfiles = {}
+tar = tarfile.open(fileobj=sys.stdin.buffer, mode="r|")
+for tinfo in tar:
+    name = tinfo.name
+
+    if name.endswith(".json"):
+        jsonfiles[name] = json.loads(tar.extractfile(tinfo).read().decode("utf-8"))
+
+    if name.endswith("layer.tar"):
+        hashwrapper = SHA256Pipe(tar.extractfile(tinfo))
+        innertar = tarfile.open(fileobj=hashwrapper, mode="r|")
+
+        layerpath = os.path.join(outpath, os.path.dirname(name))
+        os.mkdir(layerpath)
+        print("Extracting to %s" % layerpath)
+        innertar.extractall(path=layerpath, numeric_owner=True)
+
+        diffidpath = os.path.join(outpath, hashwrapper.hexdigest())
+        print("Moving to %s" % diffidpath)
+        os.rename(layerpath, diffidpath)
+
+json = jsonfiles[jsonfiles["manifest.json"][0]["Config"]]
+diffids = [ x.split(':')[1] for x in json["rootfs"]["diff_ids"] ]
+
+#First is the base image, rename it.
+os.rename(os.path.join(outpath, diffids.pop(0)), os.path.join(outpath, "baseroot"))
+
+#Rename the lowest os layer.
+ospath = os.path.join(outpath, "osroot")
+os.rename(os.path.join(outpath, diffids.pop(0)), ospath)
+
+#Iterate over all remaining os layers, merging them int ospath.
+for diffid in diffids:
+    layer = os.path.join(outpath, diffid)
+    print("Merging %s" % layer)
+
+    merge_layer(layer, ospath)
+
+    os.rmdir(layer)
+
+tar.close()

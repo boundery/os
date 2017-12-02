@@ -95,6 +95,8 @@ DEVELDIR := $(SRCDIR)/devel
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 ROOTFSDIR := $(BUILDDIR)/rootfs
+BASEFSDIR := $(ROOTFSDIR)/baseroot
+OSFSDIR := $(ROOTFSDIR)/osroot
 EXTRADEBDIR := $(BUILDDIR)/extradebs
 KERNELDIR := $(BUILDDIR)/linux
 IMGFSDIR := $(BUILDDIR)/imgfs
@@ -161,13 +163,13 @@ kernel_dtb: $(KERNEL_DTB)
 $(KERNEL_DTB): $(KERNEL)
 endif
 
-KERNEL_MOD_INSTALL := $(ROOTFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
+KERNEL_MOD_INSTALL := $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
 $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 	( cd $(KERNELDIR); \
-	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
+	  fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
-	          INSTALL_MOD_PATH=$(ROOTFSDIR) \
+	          INSTALL_MOD_PATH=$(OSFSDIR) \
 	          modules_install )
 
 PHONY += kernel_clean
@@ -228,11 +230,11 @@ $(KERNFW_SRC):
 	    tar --strip-components=2 -xz -C $(KERNFWDIR) \
 		firmware-nonfree-master/brcm80211
 
-KERNFW_INSTALL_DIR := $(ROOTFSDIR)/lib/firmware/brcm
+KERNFW_INSTALL_DIR := $(OSFSDIR)/lib/firmware/brcm
 KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw-610.812
 kernfw_install: $(KERNFW_INSTALL)
 $(KERNFW_INSTALL): $(KERNFW_SRC) # see below for additional deps
-	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
+	fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
 	    sh -ce 'mkdir -p $(KERNFW_INSTALL_DIR); \
 	            cp -rT $(KERNFWDIR)/brcm $(KERNFW_INSTALL_DIR); \
 	            find $(KERNFW_INSTALL_DIR) \
@@ -271,75 +273,89 @@ PHONY += extra_debs_clean
 extra_debs_clean:
 	rm -rf $(EXTRADEBDIR)
 
-#We have to start a container to get a flattened "export" of the container,
-# rather than the layered "save" of the image.
-ROOTFS := $(ROOTFSDIR)/init
+ROOTFS := $(OSFSDIR)/init
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS)
-	@rm -rf $(BUILDDIR)/rootfs*
+	@rm -rf $(ROOTFSDIR)
 	@mkdir -p $(ROOTFSDIR)
 	tar zcf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
 	  docker build $(DOCKER_BUILD_PROXY) \
 	  --build-arg FROM_CONTAINER=$(DEBIAN_CONTAINER) \
-	  --build-arg EXTRADEBDIR=$(EXTRADEBDIR) \
 	  --force-rm=true -t rootfs-$(BUILDROOTID) -
-	docker run --name rootfs-$(BUILDROOTID) rootfs-$(BUILDROOTID) echo
-	docker export rootfs-$(BUILDROOTID) | \
-	  fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  tar xf - -C $(ROOTFSDIR)
-	fakeroot -i $(BUILDDIR)/rootfs.fakeroot -s $(BUILDDIR)/rootfs.fakeroot \
-	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(ROOTFSDIR)
+	docker save rootfs-$(BUILDROOTID) | \
+	  fakeroot -s $(ROOTFSDIR)/fakeroot \
+	  script/untar-docker-image $(ROOTFSDIR)
+	fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
+	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
 	touch $(ROOTFS)
-	-docker rm rootfs-$(BUILDROOTID)
+ifndef KEEP_CONTAINER
 	-docker rmi rootfs-$(BUILDROOTID)
+endif
 	@[ ! -d $(DEVELDIR)/rootfs ] || \
-	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot \
-		   -s $(BUILDDIR)/rootfs.fakeroot \
-	    cp -r $(DEVELDIR)/rootfs/. $(ROOTFSDIR)
+	  fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
+	    cp -r $(DEVELDIR)/rootfs/. $(OSFSDIR)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
 $(KERNFW_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
-	-docker rm rootfs-$(BUILDROOTID) || true
 	-docker rmi rootfs-$(BUILDROOTID) || true
 ifneq ($(shell docker images -f "dangling=true" -q),)
 	-docker rmi `docker images -f "dangling=true" -q`
 endif
-	rm -rf $(BUILDDIR)/rootfs*
+	rm -rf $(ROOTFSDIR)
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
 $(INITRD): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
-	( cd $(ROOTFSDIR); \
+	( cd $(BASEFSDIR) ; \
 	  find . | \
-	  fakeroot -i $(BUILDDIR)/rootfs.fakeroot cpio -o -H newc | \
-	  gzip > $(INITRD) )
+	  fakeroot -i $(ROOTFSDIR)/fakeroot cpio -o -H newc -O $(INITRD) )
+	( cd $(OSFSDIR); \
+	  find . | \
+	  fakeroot -i $(ROOTFSDIR)/fakeroot cpio -o -H newc -A -O $(INITRD) )
+	gzip $(INITRD)
+	@mv $(INITRD).gz $(INITRD)
 
 PHONY += initrd_clean
 initrd_clean:
 	rm -f $(INITRD)
 
-SQUASHFS := $(IMGFSDIR)/root.sqfs
-squashfs: $(SQUASHFS)
-$(SQUASHFS): $(ROOTFS) $(INITRD)
+BASESQUASHFS := $(IMGFSDIR)/baseroot.sqfs
+basesquashfs: $(BASESQUASHFS)
+$(BASESQUASHFS): $(ROOTFS)
 	@mkdir -p $(IMGFSDIR)
-	@rm -f $(SQUASHFS)
-	fakeroot -i $(BUILDDIR)/rootfs.fakeroot \
-	         mksquashfs $(ROOTFSDIR) $(SQUASHFS)
+	@mkdir -p $(IMGFSDIR)/baseroot
+	@rm -rf $(BASESQUASHFS)
+	fakeroot -i $(ROOTFSDIR)/fakeroot \
+	         mksquashfs $(BASEFSDIR) $(BASESQUASHFS)
 
-PHONY += squashfs_clean
-squashfs_clean:
-	rm -f $(SQUASHFS)
+PHONY += basesquashfs_clean
+basesquashfs_clean:
+	rm -f $(BASESQUASHFS)
+
+OSSQUASHFS := $(IMGFSDIR)/osroot.sqfs
+ossquashfs: $(OSSQUASHFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
+$(OSSQUASHFS): $(ROOTFS)
+	@mkdir -p $(IMGFSDIR)
+	@mkdir -p $(IMGFSDIR)/osroot
+	@rm -rf $(OSSQUASHFS)
+	fakeroot -i $(ROOTFSDIR)/fakeroot \
+	         mksquashfs $(OSFSDIR) $(OSSQUASHFS)
+
+PHONY += ossquashfs_clean
+ossquashfs_clean:
+	rm -f $(OSSQUASHFS)
 
 ###############
 # Image Targets
 
 IMG_FILES = \
 	$(INITRD) \
-	$(SQUASHFS) \
+	$(BASESQUASHFS) \
+	$(OSSQUASHFS) \
 	$(KERNEL) \
 	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
 	$(wildcard $(DEVELDIR)/imgfs/*)
@@ -351,17 +367,16 @@ IMG_FILES += \
 	$(UBOOT_ENV) \
 	$(SRCDIR)/rpi/config.txt \
 	$(BOOTFW)
-
 else ifeq ($(ARCH), amd64)
 IMG_FILES += $(SRCDIR)/pc/grub.cfg
-
 endif
 
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
-	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMG_FILES)
+	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_FILES)) $(IMGFSDIR)
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:

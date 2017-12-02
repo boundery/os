@@ -15,7 +15,7 @@ sleep 2
 # Mount only the necessary filesystems.
 # We need /proc to mount anything, /dev to mount /boot,
 # and /boot for the new root image.
-# swich_root complains if /sys or /run is not mounted.
+# switch_root complains if /sys or /run is not mounted.
 mount /proc
 # XXX debugging: do this to skip switch_root
 #exec /init1
@@ -26,7 +26,9 @@ mount /run
 
 # Switch to the real root.
 mkdir /newroot
-mount -tsquashfs /boot/root.sqfs /newroot
+mount -tsquashfs /boot/baseroot.sqfs /boot/baseroot
+mount -tsquashfs /boot/osroot.sqfs /boot/osroot
+mount -toverlay overlay -olowerdir=/boot/osroot:/boot/baseroot /newroot
 mount --move /boot /newroot/boot
 # XXX debugging: leave old root visible under the new root
 #mount --bind / /newroot/mnt
