@@ -8,9 +8,6 @@
 #XXX Do we even need to cross build anything other than containers?  How
 #    valuable is the seperation between build env and run env provided by .deb?
 
-#XXX Need some locking around fakeroot.  Otherwise 2 parallel fakeroots could
-#    stomp on each other.
-
 #XXX Turn the http:// URLs into https:// if we can fix apt-cacher-ng to work with them.
 #XXX Check signatures for downloads!
 
@@ -110,6 +107,8 @@ endif
 
 BUILDROOTID := $(shell echo $(SRCDIR) | sha1sum | cut -b1-10)
 
+FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
+
 ###########################
 #Validate some assumptions.
 
@@ -167,7 +166,7 @@ KERNEL_MOD_INSTALL := $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
 $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 	( cd $(KERNELDIR); \
-	  fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
+	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	          INSTALL_MOD_PATH=$(OSFSDIR) \
 	          modules_install )
@@ -234,14 +233,12 @@ KERNFW_INSTALL_DIR := $(OSFSDIR)/lib/firmware/brcm
 KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw-610.812
 kernfw_install: $(KERNFW_INSTALL)
 $(KERNFW_INSTALL): $(KERNFW_SRC) # see below for additional deps
-	fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
+	$(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	    sh -ce 'mkdir -p $(KERNFW_INSTALL_DIR); \
 	            cp -rT $(KERNFWDIR)/brcm $(KERNFW_INSTALL_DIR); \
 	            find $(KERNFW_INSTALL_DIR) \
 			 -type d -exec chmod 755 {} \; -o \
 	                 -type f -exec chmod 644 {} \;'
-
-$(KERNEL_MOD_INSTALL): $(KERNFW_INSTALL) # prevent concurrent fakeroot
 
 PHONY += kernfw_clean
 kernfw_clean:
@@ -283,16 +280,16 @@ $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS)
 	  --build-arg FROM_CONTAINER=$(DEBIAN_CONTAINER) \
 	  --force-rm=true -t rootfs-$(BUILDROOTID) -
 	docker save rootfs-$(BUILDROOTID) | \
-	  fakeroot -s $(ROOTFSDIR)/fakeroot \
+	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	  script/untar-docker-image $(ROOTFSDIR)
-	fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
+	$(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
 	touch $(ROOTFS)
 ifndef KEEP_CONTAINER
 	-docker rmi rootfs-$(BUILDROOTID)
 endif
 	@[ ! -d $(DEVELDIR)/rootfs ] || \
-	  fakeroot -i $(ROOTFSDIR)/fakeroot -s $(ROOTFSDIR)/fakeroot \
+	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	    cp -r $(DEVELDIR)/rootfs/. $(OSFSDIR)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
@@ -312,10 +309,10 @@ $(INITRD): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
 	( cd $(BASEFSDIR) ; \
 	  find . | \
-	  fakeroot -i $(ROOTFSDIR)/fakeroot cpio -o -H newc -O $(INITRD) )
+	  $(FAKEROOT) $(ROOTFSDIR)/fakeroot cpio -o -H newc -O $(INITRD) )
 	( cd $(OSFSDIR); \
 	  find . | \
-	  fakeroot -i $(ROOTFSDIR)/fakeroot cpio -o -H newc -A -O $(INITRD) )
+	  $(FAKEROOT) $(ROOTFSDIR)/fakeroot cpio -o -H newc -A -O $(INITRD) )
 	gzip $(INITRD)
 	@mv $(INITRD).gz $(INITRD)
 
@@ -329,8 +326,8 @@ $(BASESQUASHFS): $(ROOTFS)
 	@mkdir -p $(IMGFSDIR)
 	@mkdir -p $(IMGFSDIR)/baseroot
 	@rm -rf $(BASESQUASHFS)
-	fakeroot -i $(ROOTFSDIR)/fakeroot \
-	         mksquashfs $(BASEFSDIR) $(BASESQUASHFS)
+	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
+	  mksquashfs $(BASEFSDIR) $(BASESQUASHFS)
 
 PHONY += basesquashfs_clean
 basesquashfs_clean:
@@ -342,8 +339,8 @@ $(OSSQUASHFS): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
 	@mkdir -p $(IMGFSDIR)/osroot
 	@rm -rf $(OSSQUASHFS)
-	fakeroot -i $(ROOTFSDIR)/fakeroot \
-	         mksquashfs $(OSFSDIR) $(OSSQUASHFS)
+	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
+	  mksquashfs $(OSFSDIR) $(OSSQUASHFS)
 
 PHONY += ossquashfs_clean
 ossquashfs_clean:
