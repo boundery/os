@@ -88,6 +88,10 @@ for tinfo in tar:
         print("Extracting to %s" % layerpath)
         innertar.extractall(path=layerpath, numeric_owner=True)
 
+        #Close, then read any leftover padding so the hash is correct.
+        innertar.close()
+        hashwrapper.readall()
+
         diffidpath = os.path.join(outpath, hashwrapper.hexdigest())
         print("Moving to %s" % diffidpath)
         os.rename(layerpath, diffidpath)
@@ -102,7 +106,7 @@ os.rename(os.path.join(outpath, diffids.pop(0)), os.path.join(outpath, "baseroot
 ospath = os.path.join(outpath, "osroot")
 os.rename(os.path.join(outpath, diffids.pop(0)), ospath)
 
-#Iterate over all remaining os layers, merging them int ospath.
+#Iterate over all remaining os layers, merging them in to ospath.
 for diffid in diffids:
     layer = os.path.join(outpath, diffid)
     print("Merging %s" % layer)
