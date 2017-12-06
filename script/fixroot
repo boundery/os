@@ -8,6 +8,7 @@ rootsrc="$1"
 rootfs="$2"
 
 # make device nodes
+mkdir -p "$rootfs/dev"
 mknod "$rootfs/dev/full" c 1 7
 mknod "$rootfs/dev/null" c 1 3
 mknod "$rootfs/dev/random" c 1 8
