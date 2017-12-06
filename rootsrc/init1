@@ -12,6 +12,9 @@ echo 5 >/proc/sys/kernel/panic
 modprobe brcmfmac
 (netd &)
 
+mkdir -p /tmp/docker/etc
+mount -t tmpfs tmpfs /var/lib/docker
+mount --bind /tmp/docker/etc /etc/docker
 startdocker
 
 #XXX eventually this will be some form of getty

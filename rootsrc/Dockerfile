@@ -18,6 +18,7 @@ RUN    apt-get update \
            procps \
            busybox-syslogd \
            /debs/*.deb \
+    && mkdir -p /var/lib/docker /etc/docker \
     && rm -rf /debs \
     && rm -rf /var/lib/apt/lists/*
 
