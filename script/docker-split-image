@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+
+import sys
+import tarfile
+import io
+
+fname = sys.argv[1]
+
+bin = sys.stdin.buffer.read()
+tin = tarfile.open(fileobj=io.BytesIO(bin), mode="r|")
+outbin = open("%s.bin" % fname, "wb")
+outoff = open("%s.off" % fname, "wt")
+off = 0
+outbincnt = 0
+
+for tinfo in tin:
+    if tinfo.name.endswith("/layer.tar"):
+        tinner = tarfile.open(fileobj=tin.extractfile(tinfo), mode="r|")
+        for tiinfo in tinner:
+            if tiinfo.size != 0:
+                outbin.write(bin[off:tinfo.offset_data + tiinfo.offset_data])
+                outoff.write("%s %s\n" % (outbincnt, tinfo.offset_data + tiinfo.offset_data - off))
+                outbincnt += tinfo.offset_data + tiinfo.offset_data - off
+                outoff.write("F %s\n" % tiinfo.name)
+                off = tinfo.offset_data + tiinfo.offset_data + tiinfo.size
+
+tin.close()
+outbin.write(bin[off:])
+outoff.write("%s %s\n" % (outbincnt, len(bin) - off))
+
+outbin.close()
+outoff.close()

@@ -1,0 +1,17 @@
+#!/bin/sh
+
+if [ ! -f $1.bin ] || [ ! -f $1.off ] || [ ! -d $2 ]; then
+    echo Usage: $0 bin/off filedir >&2
+    exit 99
+fi
+
+basename=$1
+fileroot=$2
+
+while read off len; do
+    if [ "$off" = "F" ]; then
+        cat $fileroot/$len
+    else
+        dd if=$basename.bin count=$len bs=262144 iflag=skip_bytes,count_bytes skip=$off status=none
+    fi
+done < $basename.off

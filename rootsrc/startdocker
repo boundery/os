@@ -5,14 +5,28 @@ if ! grep -q '^cgroup /sys/fs/cgroup tmpfs' < /proc/mounts; then
     (
         cd /sys/fs/cgroup
         for sys in $(awk '!/^#/ { if ($4 == 1) print $1 }' /proc/cgroups); do
-	    mkdir -p $sys
-	    if ! mountpoint -q $sys; then
-	        if ! mount -n -t cgroup -o $sys cgroup $sys; then
-		    rmdir $sys || true
-	        fi
-	    fi
+            mkdir -p $sys
+            if ! mountpoint -q $sys; then
+                if ! mount -n -t cgroup -o $sys cgroup $sys; then
+                    rmdir $sys || true
+                fi
+            fi
         done
     )
 fi
 
 dockerd -p /var/run/dockerd.pid 2>&1 | logger -p daemon.info -t dockerd &
+
+while ! docker info >/dev/null 2>&1; do
+    sleep 0.5
+done
+
+if ! docker images | grep -q ^debian; then
+    unsplit-tar /boot/debian /boot/baseroot | docker load
+    for i in /var/lib/docker/overlay2/*; do
+        if [ -d $i/diff ]; then
+            rm -rf $i/diff
+            ln -sf /boot/baseroot $i/diff
+        fi
+    done
+fi

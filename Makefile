@@ -95,6 +95,7 @@ ROOTFSDIR := $(BUILDDIR)/rootfs
 BASEFSDIR := $(ROOTFSDIR)/baseroot
 OSFSDIR := $(ROOTFSDIR)/osroot
 EXTRADEBDIR := $(BUILDDIR)/extradebs
+CONTAINERDIR := $(BUILDDIR)/containers
 KERNELDIR := $(BUILDDIR)/linux
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
@@ -270,9 +271,17 @@ PHONY += extra_debs_clean
 extra_debs_clean:
 	rm -rf $(EXTRADEBDIR)
 
+CONTAINERS := $(CONTAINERDIR)/.stamp
+containers: $(CONTAINERS)
+$(CONTAINERS): $(SCRIPTDIR)/docker-split-image
+	mkdir -p $(CONTAINERDIR)
+	docker save $(DEBIAN_CONTAINER) | \
+	  $(SCRIPTDIR)/docker-split-image $(CONTAINERDIR)/debian
+	touch $(CONTAINERDIR)/.stamp
+
 ROOTFS := $(OSFSDIR)/init
 rootfs: $(ROOTFS)
-$(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS)
+$(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
 	@rm -rf $(ROOTFSDIR)
 	@mkdir -p $(ROOTFSDIR)
 	tar zcf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
@@ -281,7 +290,7 @@ $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS)
 	  --force-rm=true -t rootfs-$(BUILDROOTID) -
 	docker save rootfs-$(BUILDROOTID) | \
 	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
-	  script/untar-docker-image $(ROOTFSDIR)
+	  $(SCRIPTDIR)/untar-docker-image $(ROOTFSDIR)
 	$(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
 	touch $(ROOTFS)
@@ -355,7 +364,8 @@ IMG_FILES = \
 	$(OSSQUASHFS) \
 	$(KERNEL) \
 	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
-	$(wildcard $(DEVELDIR)/imgfs/*)
+	$(wildcard $(DEVELDIR)/imgfs/*) \
+	$(wildcard $(CONTAINERDIR)/*)
 
 ifeq ($(ARCH), armhf)
 IMG_FILES += \
@@ -370,7 +380,7 @@ endif
 
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
-$(RPI3_IMG): $(IMG_FILES) $(SCRIPTDIR)/mkfatimg
+$(RPI3_IMG): $(IMG_FILES) $(CONTAINERS) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_FILES)) $(IMGFSDIR)
 	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
@@ -381,7 +391,7 @@ rpi3_img_clean:
 
 PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)
-$(PC_IMG): $(IMG_FILES)
+$(PC_IMG): $(IMG_FILES) $(CONTAINERS)
 	@mkdir -p $(IMAGESDIR)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_FILES)) $(IMGFSDIR)
 	mkdir -p $(IMGFSDIR)/boot/grub

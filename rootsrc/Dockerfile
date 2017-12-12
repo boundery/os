@@ -29,4 +29,5 @@ COPY wpa_supplicant.conf /usr/local/etc
 COPY mkwpaconf /usr/local/sbin
 COPY startdocker /usr/local/sbin
 COPY netd /usr/local/sbin
+COPY unsplit-tar /usr/local/sbin
 COPY sethostname /etc/dhcp/dhclient-exit-hooks.d
