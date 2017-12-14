@@ -22,7 +22,6 @@ RUN    apt-get update \
     && rm -rf /debs \
     && rm -rf /var/lib/apt/lists/*
 
-COPY init /
 COPY init1 /
 COPY fstab /etc/
 COPY wpa_supplicant.conf /usr/local/etc

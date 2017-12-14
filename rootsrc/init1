@@ -1,5 +1,14 @@
 #!/bin/sh
 
+# Set PATH.
+# This does two things:
+#     1. Set the path for ourselves.
+#     2. Give subprocesses a path.
+#        While dash provides a default path if we are started
+#        without one, it it not exported.  So do that here.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 mount -a
 
 hostname `cat /etc/hostname`

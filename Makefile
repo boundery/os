@@ -48,6 +48,7 @@ UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
 CROSS_PREFIX=arm-linux-gnueabihf-
 DEBIAN_CONTAINER := arm32v7/debian:$(DEBIAN_RELEASE)-slim
+BUSYBOX_CONTAINER := arm32v7/busybox
 else ifeq ($(ARCH), amd64)
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
@@ -55,6 +56,7 @@ KERNEL_EXTRAS=
 SERIAL_TTY=ttyS0
 CROSS_PREFIX=
 DEBIAN_CONTAINER := debian:$(DEBIAN_RELEASE)-slim
+BUSYBOX_CONTAINER := busybox
 else
 $(error ARCH $(ARCH) is not supported)
 endif
@@ -91,6 +93,7 @@ ROOTSRCDIR := $(SRCDIR)/rootsrc
 DEVELDIR := $(SRCDIR)/devel
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
+INITRDDIR := $(BUILDDIR)/initrd
 ROOTFSDIR := $(BUILDDIR)/rootfs
 BASEFSDIR := $(ROOTFSDIR)/baseroot
 OSFSDIR := $(ROOTFSDIR)/osroot
@@ -135,7 +138,7 @@ all_clean:
 	@rm -rf $(BUILDDIR)/..
 
 PHONY += clean
-clean:
+clean: rootfs_clean initrd_clean
 	@rm -rf $(BUILDDIR)
 
 KERNEL_SRC := $(KERNELDIR)/Makefile
@@ -314,20 +317,30 @@ endif
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
-$(INITRD): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
+$(INITRD): $(ROOTSRCDIR)/init $(ROOTSRCDIR)/fstab
 	@mkdir -p $(IMGFSDIR)
-	( cd $(BASEFSDIR) ; \
+	@rm -rf $(INITRDDIR) $(INITRDDIR).fakeroot
+	@mkdir -p $(INITRDDIR)
+	docker container create --name=initrd-$(BUILDROOTID) \
+	  $(BUSYBOX_CONTAINER)
+	docker export initrd-$(BUILDROOTID) | \
+	  $(FAKEROOT) -s $(INITRDDIR).fakeroot tar xpf - -C$(INITRDDIR)
+	$(FAKEROOT) -s $(INITRDDIR).fakeroot \
+	  sh -ce 'cd $(INITRDDIR); \
+		  cp $(ROOTSRCDIR)/init .; \
+	          cp $(ROOTSRCDIR)/fstab etc; \
+	          mknod dev/console c 5 1; \
+		  mkdir boot'
+	( cd $(INITRDDIR) ; \
 	  find . | \
-	  $(FAKEROOT) $(ROOTFSDIR)/fakeroot cpio -o -H newc -O $(INITRD) )
-	( cd $(OSFSDIR); \
-	  find . | \
-	  $(FAKEROOT) $(ROOTFSDIR)/fakeroot cpio -o -H newc -A -O $(INITRD) )
-	gzip $(INITRD)
-	@mv $(INITRD).gz $(INITRD)
+	    $(FAKEROOT) $(INITRDDIR).fakeroot cpio -o -H newc) | \
+	    gzip > $(INITRD)
+	docker rm initrd-$(BUILDROOTID)
 
 PHONY += initrd_clean
 initrd_clean:
-	rm -f $(INITRD)
+	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
+	docker rm initrd-$(BUILDROOTID) || true
 
 BASESQUASHFS := $(IMGFSDIR)/baseroot.sqfs
 basesquashfs: $(BASESQUASHFS)

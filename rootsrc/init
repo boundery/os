@@ -1,34 +1,24 @@
 #!/bin/sh
 
-# Set PATH.
-# This does two things:
-#     1. Set the path for ourselves.
-#     2. Give subprocesses a path.  We are started without a path.
-#        While dash provides a default path, it is not exported.
-#        So do that here.
-
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
 # Wait a little for devices to appear.
 sleep 2
 
-# Mount only the necessary filesystems.
+# Mount the necessary filesystems.
 # We need /proc to mount anything, /dev to mount /boot,
 # and /boot for the new root image.
-# switch_root complains if /sys or /run is not mounted.
 mount /proc
-# XXX debugging: do this to skip switch_root
-#exec /init1
 mount /dev
 mount /boot
-mount /sys
-mount /run
+# XXX debugging: break into a shell
+#sh
 
 # Switch to the real root.
 mkdir /newroot
 mount -tsquashfs /boot/baseroot.sqfs /boot/baseroot
 mount -tsquashfs /boot/osroot.sqfs /boot/osroot
 mount -toverlay overlay -olowerdir=/boot/osroot:/boot/baseroot /newroot
+mount --move /proc /newroot/proc
+mount --move /dev /newroot/dev
 mount --move /boot /newroot/boot
 # XXX debugging: leave old root visible under the new root
 #mount --bind / /newroot/mnt
