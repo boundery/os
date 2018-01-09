@@ -31,7 +31,7 @@ def merge_layer(layer, base):
     to_rmdir = []
     for subdir in os.walk(layer, topdown=True):
         #print("DEBUG %s" % subdir[0])
-        
+
         for f in subdir[2]:
             if f.startswith(".wh."):
                 #print("DEBUG Whiting out %s" % f[4:])
