@@ -375,23 +375,25 @@ IMG_DEPS = \
 	$(BASESQUASHFS) \
 	$(OSSQUASHFS) \
 	$(KERNEL) \
-	$(CONTAINERS)
+	$(CONTAINERS) \
+	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
+	$(wildcard $(DEVELDIR)/imgfs/*)
 ifeq ($(ARCH), armhf)
 IMG_DEPS += \
 	$(KERNEL_DTB) \
 	$(UBOOT) \
 	$(UBOOT_ENV) \
-	$(BOOTFW)
+	$(BOOTFW) \
+	$(SRCDIR)/rpi/config.txt
+else ifeq ($(ARCH), amd64)
+IMG_FILES += $(SRCDIR)/pc/grub.cfg
 endif
 
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_DEPS) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
-	cp -r $(KERNEL) $(KERNEL_DTB) $(UBOOT) \
-	  $(SRCDIR)/rpi/config.txt $(BOOTFW) \
-	  $(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
-	  $(wildcard $(DEVELDIR)/imgfs/*) $(IMGFSDIR)
+	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
 	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
 
 PHONY += rpi3_img_clean
@@ -402,9 +404,7 @@ PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)
 $(PC_IMG): $(IMG_DEPS)
 	@mkdir -p $(IMAGESDIR)
-	cp -r $(KERNEL) $(SRCDIR)/pc/grub.cfg \
-	  $(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
-	  $(wildcard $(DEVELDIR)/imgfs/*) $(IMGFSDIR)
+	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
 	mkdir -p $(IMGFSDIR)/boot/grub
 	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
 	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
