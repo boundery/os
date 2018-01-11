@@ -98,7 +98,6 @@ ROOTFSDIR := $(BUILDDIR)/rootfs
 BASEFSDIR := $(ROOTFSDIR)/baseroot
 OSFSDIR := $(ROOTFSDIR)/osroot
 EXTRADEBDIR := $(BUILDDIR)/extradebs
-CONTAINERDIR := $(BUILDDIR)/containers
 KERNELDIR := $(BUILDDIR)/linux
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
@@ -274,13 +273,13 @@ PHONY += extra_debs_clean
 extra_debs_clean:
 	rm -rf $(EXTRADEBDIR)
 
-CONTAINERS := $(CONTAINERDIR)/.stamp
+#XXX If "docker save" doesn't pull images, this actually must depend on $(ROOTFS)
+CONTAINERS := $(IMGFSDIR)/debian.off
 containers: $(CONTAINERS)
 $(CONTAINERS): $(SCRIPTDIR)/docker-split-image
-	mkdir -p $(CONTAINERDIR)
+	mkdir -p $(IMGFSDIR)
 	docker save $(DEBIAN_CONTAINER) | \
-	  $(SCRIPTDIR)/docker-split-image $(CONTAINERDIR)/debian
-	touch $(CONTAINERDIR)/.stamp
+	  $(SCRIPTDIR)/docker-split-image $(IMGFSDIR)/debian
 
 ROOTFS := $(OSFSDIR)/init
 rootfs: $(ROOTFS)
@@ -371,31 +370,28 @@ ossquashfs_clean:
 ###############
 # Image Targets
 
-IMG_FILES = \
+IMG_DEPS = \
 	$(INITRD) \
 	$(BASESQUASHFS) \
 	$(OSSQUASHFS) \
 	$(KERNEL) \
-	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
-	$(wildcard $(DEVELDIR)/imgfs/*) \
-	$(wildcard $(CONTAINERDIR)/*)
-
+	$(CONTAINERS)
 ifeq ($(ARCH), armhf)
-IMG_FILES += \
+IMG_DEPS += \
 	$(KERNEL_DTB) \
 	$(UBOOT) \
 	$(UBOOT_ENV) \
-	$(SRCDIR)/rpi/config.txt \
 	$(BOOTFW)
-else ifeq ($(ARCH), amd64)
-IMG_FILES += $(SRCDIR)/pc/grub.cfg
 endif
 
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
 rpi3_img: $(RPI3_IMG)
-$(RPI3_IMG): $(IMG_FILES) $(CONTAINERS) $(SCRIPTDIR)/mkfatimg
+$(RPI3_IMG): $(IMG_DEPS) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
-	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_FILES)) $(IMGFSDIR)
+	cp -r $(KERNEL) $(KERNEL_DTB) $(UBOOT) \
+	  $(SRCDIR)/rpi/config.txt $(BOOTFW) \
+	  $(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
+	  $(wildcard $(DEVELDIR)/imgfs/*) $(IMGFSDIR)
 	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
 
 PHONY += rpi3_img_clean
@@ -404,9 +400,11 @@ rpi3_img_clean:
 
 PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)
-$(PC_IMG): $(IMG_FILES) $(CONTAINERS)
+$(PC_IMG): $(IMG_DEPS)
 	@mkdir -p $(IMAGESDIR)
-	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_FILES)) $(IMGFSDIR)
+	cp -r $(KERNEL) $(SRCDIR)/pc/grub.cfg \
+	  $(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
+	  $(wildcard $(DEVELDIR)/imgfs/*) $(IMGFSDIR)
 	mkdir -p $(IMGFSDIR)/boot/grub
 	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
 	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
