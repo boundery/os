@@ -30,12 +30,6 @@ mknod "$rootfs/dev/tty3" c 4 0
 cp --preserve=mode $rootsrc/hostname $rootfs/etc
 cp --preserve=mode $rootsrc/hosts $rootfs/etc
 
-# link mutable files to /run for read-only root
-# XXX some of these should be persistent
+#Docker bind mounts the host's resolv.conf in the container, so we can't do this
+# from the Dockerfile.
 ln -sf ../run/resolv.conf $rootfs/etc/resolv.conf
-rm -rf $rootfs/var/lib/openntpd
-ln -s ../../run/openntpd $rootfs/var/lib/openntpd
-
-# point /var/tmp to /tmp so they can share the same tmpfs
-rm -rf $rootfs/var/tmp
-ln -s ../tmp $rootfs/var/tmp

@@ -19,6 +19,8 @@ RUN    apt-get update \
            busybox-syslogd \
            /debs/*.deb \
     && mkdir -p /var/lib/docker /etc/docker \
+    && rm -rf /var/tmp && ln -s /tmp /var/tmp \
+    && rm -rf /var/lib/openntpd && ln -sf /run/openntpd /var/lib/openntpd \
     && rm -rf /debs \
     && rm -rf /var/lib/apt/lists/*
 
