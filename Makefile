@@ -274,12 +274,12 @@ extra_debs_clean:
 	rm -rf $(EXTRADEBDIR)
 
 #XXX If "docker save" doesn't pull images, this actually must depend on $(ROOTFS)
-CONTAINERS := $(IMGFSDIR)/debian.off
+CONTAINERS := $(IMGFSDIR)/layers/debian.off
 containers: $(CONTAINERS)
 $(CONTAINERS): $(SCRIPTDIR)/docker-split-image
-	mkdir -p $(IMGFSDIR)
+	mkdir -p $(IMGFSDIR)/layers
 	docker save $(DEBIAN_CONTAINER) | \
-	  $(SCRIPTDIR)/docker-split-image $(IMGFSDIR)/debian
+	  $(SCRIPTDIR)/docker-split-image $(IMGFSDIR)/layers/debian
 
 ROOTFS := $(OSFSDIR)/init
 rootfs: $(ROOTFS)
@@ -345,7 +345,7 @@ BASESQUASHFS := $(IMGFSDIR)/baseroot.sqfs
 basesquashfs: $(BASESQUASHFS)
 $(BASESQUASHFS): $(ROOTFS)
 	@mkdir -p $(IMGFSDIR)
-	@mkdir -p $(IMGFSDIR)/baseroot
+	@mkdir -p $(IMGFSDIR)/layers/baseroot
 	@rm -rf $(BASESQUASHFS)
 	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
 	  mksquashfs $(BASEFSDIR) $(BASESQUASHFS)
@@ -358,7 +358,7 @@ OSSQUASHFS := $(IMGFSDIR)/osroot.sqfs
 ossquashfs: $(OSSQUASHFS)
 $(OSSQUASHFS): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
-	@mkdir -p $(IMGFSDIR)/osroot
+	@mkdir -p $(IMGFSDIR)/layers/osroot
 	@rm -rf $(OSSQUASHFS)
 	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
 	  mksquashfs $(OSFSDIR) $(OSSQUASHFS)

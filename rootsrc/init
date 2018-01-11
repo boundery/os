@@ -14,9 +14,9 @@ mount /boot
 
 # Switch to the real root.
 mkdir /newroot
-mount -tsquashfs /boot/baseroot.sqfs /boot/baseroot
-mount -tsquashfs /boot/osroot.sqfs /boot/osroot
-mount -toverlay overlay -olowerdir=/boot/osroot:/boot/baseroot /newroot
+mount -tsquashfs /boot/baseroot.sqfs /boot/layers/baseroot
+mount -tsquashfs /boot/osroot.sqfs /boot/layers/osroot
+mount -toverlay overlay -olowerdir=/boot/layers/osroot:/boot/layers/baseroot /newroot
 mount --move /proc /newroot/proc
 mount --move /dev /newroot/dev
 mount --move /boot /newroot/boot
