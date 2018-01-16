@@ -99,8 +99,9 @@ for tinfo in tar:
 json = jsonfiles[jsonfiles["manifest.json"][0]["Config"]]
 diffids = [ x.split(':')[1] for x in json["rootfs"]["diff_ids"] ]
 
-#First is the base image, rename it.
-os.rename(os.path.join(outpath, diffids.pop(0)), os.path.join(outpath, "baseroot"))
+#First is the base image, save its name.
+with open(os.path.join(outpath, "basename.txt"), "w") as brtxt:
+    brtxt.write("%s\n" % diffids.pop(0))
 
 #Rename the lowest os layer.
 ospath = os.path.join(outpath, "osroot")

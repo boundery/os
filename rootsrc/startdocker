@@ -21,12 +21,14 @@ while ! docker info >/dev/null 2>&1; do
     sleep 0.5
 done
 
+#XXX To support multiple containers, this will need to get more clever.
 if ! docker images | grep -q ^debian; then
-    unsplit-tar /boot/layers/debian /boot/layers/baseroot | docker load
+    BASENAME=`cat /boot/basename.txt`
+    unsplit-tar /boot/layers/$BASENAME /boot/layers/$BASENAME | docker load
     for i in /var/lib/docker/overlay2/*; do
         if [ -d $i/diff ]; then
             rm -rf $i/diff
-            ln -sf /boot/layers/baseroot $i/diff
+            ln -sf /boot/layers/$BASENAME $i/diff
         fi
     done
 fi

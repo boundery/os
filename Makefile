@@ -95,7 +95,6 @@ DEVELDIR := $(SRCDIR)/devel
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 INITRDDIR := $(BUILDDIR)/initrd
 ROOTFSDIR := $(BUILDDIR)/rootfs
-BASEFSDIR := $(ROOTFSDIR)/baseroot
 OSFSDIR := $(ROOTFSDIR)/osroot
 EXTRADEBDIR := $(BUILDDIR)/extradebs
 KERNELDIR := $(BUILDDIR)/linux
@@ -273,15 +272,7 @@ PHONY += extra_debs_clean
 extra_debs_clean:
 	rm -rf $(EXTRADEBDIR)
 
-#XXX If "docker save" doesn't pull images, this actually must depend on $(ROOTFS)
-CONTAINERS := $(IMGFSDIR)/layers/debian.off
-containers: $(CONTAINERS)
-$(CONTAINERS): $(SCRIPTDIR)/docker-split-image
-	mkdir -p $(IMGFSDIR)/layers
-	docker save $(DEBIAN_CONTAINER) | \
-	  $(SCRIPTDIR)/docker-split-image $(IMGFSDIR)/layers/debian
-
-ROOTFS := $(OSFSDIR)/init
+ROOTFS := $(ROOTFSDIR)/basename.txt
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
 	@rm -rf $(ROOTFSDIR)
@@ -295,7 +286,6 @@ $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
 	  $(SCRIPTDIR)/untar-docker-image $(ROOTFSDIR)
 	$(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
 	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
-	touch $(ROOTFS)
 ifndef KEEP_CONTAINER
 	-docker rmi rootfs-$(BUILDROOTID)
 endif
@@ -313,6 +303,15 @@ ifneq ($(shell docker images -f "dangling=true" -q),)
 	-docker rmi `docker images -f "dangling=true" -q`
 endif
 	rm -rf $(ROOTFSDIR)
+
+#This depends on ROOTFS, because "docker save" won't download the image.
+CONTID := $(shell docker inspect $(DEBIAN_CONTAINER) --format '{{.RootFS.Layers}}' | tr -d '[]' | cut -d':' -f2)
+CONTAINERS := $(IMGFSDIR)/layers/$(CONTID).off
+containers: $(CONTAINERS)
+$(CONTAINERS): $(ROOTFS) $(SCRIPTDIR)/docker-split-image
+	mkdir -p $(IMGFSDIR)/layers
+	docker save $(DEBIAN_CONTAINER) | \
+	  $(SCRIPTDIR)/docker-split-image $(IMGFSDIR)/layers/$(CONTID)
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
@@ -341,20 +340,19 @@ initrd_clean:
 	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
 	docker rm initrd-$(BUILDROOTID) || true
 
-BASESQUASHFS := $(IMGFSDIR)/baseroot.sqfs
+BASESQUASHFS := $(IMGFSDIR)/layers/$(CONTID).sqfs
 basesquashfs: $(BASESQUASHFS)
 $(BASESQUASHFS): $(ROOTFS)
-	@mkdir -p $(IMGFSDIR)
-	@mkdir -p $(IMGFSDIR)/layers/baseroot
-	@rm -rf $(BASESQUASHFS)
+	@mkdir -p $(IMGFSDIR)/layers/$(CONTID)
+	@rm -f $(BASESQUASHFS)
 	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
-	  mksquashfs $(BASEFSDIR) $(BASESQUASHFS)
+	  mksquashfs $(ROOTFSDIR)/$(CONTID) $(BASESQUASHFS)
 
 PHONY += basesquashfs_clean
 basesquashfs_clean:
 	rm -f $(BASESQUASHFS)
 
-OSSQUASHFS := $(IMGFSDIR)/osroot.sqfs
+OSSQUASHFS := $(IMGFSDIR)/layers/osroot.sqfs
 ossquashfs: $(OSSQUASHFS)
 $(OSSQUASHFS): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	@mkdir -p $(IMGFSDIR)
@@ -376,6 +374,7 @@ IMG_DEPS = \
 	$(OSSQUASHFS) \
 	$(KERNEL) \
 	$(CONTAINERS) \
+	$(ROOTFSDIR)/basename.txt \
 	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
 	$(wildcard $(DEVELDIR)/imgfs/*)
 ifeq ($(ARCH), armhf)
@@ -386,7 +385,7 @@ IMG_DEPS += \
 	$(BOOTFW) \
 	$(SRCDIR)/rpi/config.txt
 else ifeq ($(ARCH), amd64)
-IMG_FILES += $(SRCDIR)/pc/grub.cfg
+IMG_DEPS += $(SRCDIR)/pc/grub.cfg
 endif
 
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
