@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# Wait a little for devices to appear.
+sleep 2
+
+# Mount the necessary filesystems.
+# We need /proc to mount anything, /dev to mount /boot,
+# and /boot for the new root image.
+mount /proc
+mount /dev
+mount /boot
+# XXX debugging: break into a shell
+#sh
+
+# Switch to the real root.
+mkdir /newroot
+BASENAME=`cat /boot/basename.txt`
+mount -tsquashfs /boot/layers/$BASENAME.sqfs /boot/layers/$BASENAME
+mount -tsquashfs /boot/layers/osroot.sqfs /boot/layers/osroot
+mount -toverlay overlay -olowerdir=/boot/layers/osroot:/boot/layers/$BASENAME /newroot
+mount --move /proc /newroot/proc
+mount --move /dev /newroot/dev
+mount --move /boot /newroot/boot
+# XXX debugging: leave old root visible under the new root
+#mount --bind / /newroot/mnt
+exec switch_root /newroot /sbin/init
