@@ -15,6 +15,7 @@ DEBIAN_RELEASE := stretch
 
 KERNEL_VERSION = 4.13.4
 BOOTFW_VERSION = 1.20170811
+BUSYBOX_VERSION = 1.28.0-uclibc
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
@@ -48,7 +49,7 @@ UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
 CROSS_PREFIX=arm-linux-gnueabihf-
 DEBIAN_CONTAINER := arm32v7/debian:$(DEBIAN_RELEASE)-slim
-BUSYBOX_CONTAINER := arm32v7/busybox
+BUSYBOX_CONTAINER := arm32v7/busybox:$(BUSYBOX_VERSION)
 else ifeq ($(ARCH), amd64)
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
@@ -56,7 +57,7 @@ KERNEL_EXTRAS=
 SERIAL_TTY=ttyS0
 CROSS_PREFIX=
 DEBIAN_CONTAINER := debian:$(DEBIAN_RELEASE)-slim
-BUSYBOX_CONTAINER := busybox
+BUSYBOX_CONTAINER := busybox:$(BUSYBOX_VERSION)
 else
 $(error ARCH $(ARCH) is not supported)
 endif
@@ -90,6 +91,7 @@ SCRIPTDIR := $(SRCDIR)/script
 PATCHDIR := $(SRCDIR)/patches
 KCONFIGDIR := $(SRCDIR)/kconfig
 ROOTSRCDIR := $(SRCDIR)/rootsrc
+INITRDSRCDIR := $(SRCDIR)/initrdsrc
 DEVELDIR := $(SRCDIR)/devel
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
@@ -298,10 +300,8 @@ $(KERNFW_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
-	-docker rmi rootfs-$(BUILDROOTID) || true
-ifneq ($(shell docker images -f "dangling=true" -q),)
-	-docker rmi `docker images -f "dangling=true" -q`
-endif
+	docker rmi rootfs-$(BUILDROOTID) >/dev/null 2>&1 || true
+	docker images -f dangling=true -q | xargs -r docker rmi
 	rm -rf $(ROOTFSDIR)
 
 #This depends on ROOTFS, because "docker save" won't download the image.
@@ -315,30 +315,32 @@ $(CONTAINERS): $(ROOTFS) $(SCRIPTDIR)/docker-split-image
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
-$(INITRD): $(ROOTSRCDIR)/init $(ROOTSRCDIR)/fstab
+$(INITRD): $(INITRDSRCDIR)/*
 	@mkdir -p $(IMGFSDIR)
 	@rm -rf $(INITRDDIR) $(INITRDDIR).fakeroot
 	@mkdir -p $(INITRDDIR)
+	docker build $(DOCKER_BUILD_PROXY) \
+	  --build-arg FROM_CONTAINER=$(BUSYBOX_CONTAINER) \
+	  -t initrd-$(BUILDROOTID) $(INITRDSRCDIR)
 	docker container create --name=initrd-$(BUILDROOTID) \
-	  $(BUSYBOX_CONTAINER)
+	  initrd-$(BUILDROOTID)
 	docker export initrd-$(BUILDROOTID) | \
 	  $(FAKEROOT) -s $(INITRDDIR).fakeroot tar xpf - -C$(INITRDDIR)
 	$(FAKEROOT) -s $(INITRDDIR).fakeroot \
-	  sh -ce 'cd $(INITRDDIR); \
-		  cp $(ROOTSRCDIR)/init .; \
-	          cp $(ROOTSRCDIR)/fstab etc; \
-	          mknod dev/console c 5 1; \
-		  mkdir boot'
+	  mknod $(INITRDDIR)/dev/console c 5 1
 	( cd $(INITRDDIR) ; \
-	  find . | \
-	    $(FAKEROOT) $(INITRDDIR).fakeroot cpio -o -H newc) | \
+	  find . | $(FAKEROOT) $(INITRDDIR).fakeroot cpio -o -H newc ) | \
 	    gzip > $(INITRD)
+ifndef KEEP_CONTAINER
 	docker rm initrd-$(BUILDROOTID)
+	docker rmi initrd-$(BUILDROOTID)
+endif
 
 PHONY += initrd_clean
 initrd_clean:
+	docker rm -f initrd-$(BUILDROOTID) >/dev/null 2>&1 || true
+	docker rmi -f initrd-$(BUILDROOTID) >/dev/null 2>&1 || true
 	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
-	docker rm initrd-$(BUILDROOTID) || true
 
 BASESQUASHFS := $(IMGFSDIR)/layers/$(CONTID).sqfs
 basesquashfs: $(BASESQUASHFS)

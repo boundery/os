@@ -1,26 +1,34 @@
 #!/bin/sh
 
-# Wait a little for devices to appear.
-sleep 2
+# Set PATH.
+# This does two things:
+#     1. Set the path for ourselves.
+#     2. Give subprocesses a path.
+#        While dash provides a default path if we are started
+#        without one, it it not exported.  So do that here.
 
-# Mount the necessary filesystems.
-# We need /proc to mount anything, /dev to mount /boot,
-# and /boot for the new root image.
-mount /proc
-mount /dev
-mount /boot
-# XXX debugging: break into a shell
-#sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Switch to the real root.
-mkdir /newroot
-BASENAME=`cat /boot/basename.txt`
-mount -tsquashfs /boot/layers/$BASENAME.sqfs /boot/layers/$BASENAME
-mount -tsquashfs /boot/layers/osroot.sqfs /boot/layers/osroot
-mount -toverlay overlay -olowerdir=/boot/layers/osroot:/boot/layers/$BASENAME /newroot
-mount --move /proc /newroot/proc
-mount --move /dev /newroot/dev
-mount --move /boot /newroot/boot
-# XXX debugging: leave old root visible under the new root
-#mount --bind / /newroot/mnt
-exec switch_root /newroot /init1
+mount -a
+
+hostname `cat /etc/hostname`
+
+syslogd -C64
+klogd -c5
+
+echo 5 >/proc/sys/kernel/panic
+
+modprobe brcmfmac
+(netd &)
+
+mkdir -p /tmp/docker/etc
+mount -t tmpfs tmpfs /var/lib/docker
+mount --bind /tmp/docker/etc /etc/docker
+startdocker
+
+#XXX eventually this will be some form of getty
+setsid -cw bash -l
+
+netd -k
+umount -a
+sync

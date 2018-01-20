@@ -13,7 +13,6 @@ mount /boot
 #sh
 
 # Switch to the real root.
-mkdir /newroot
 BASENAME=`cat /boot/basename.txt`
 mount -tsquashfs /boot/layers/$BASENAME.sqfs /boot/layers/$BASENAME
 mount -tsquashfs /boot/layers/osroot.sqfs /boot/layers/osroot
