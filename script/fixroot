@@ -30,6 +30,9 @@ mknod "$rootfs/dev/tty3" c 4 0
 cp --preserve=mode $rootsrc/hostname $rootfs/etc
 cp --preserve=mode $rootsrc/hosts $rootfs/etc
 
+# docker doesn't export this file
+ln -s ../proc/self/mounts $rootfs/etc/mtab
+
 #Docker bind mounts the host's resolv.conf in the container, so we can't do this
 # from the Dockerfile.
 ln -sf ../run/resolv.conf $rootfs/etc/resolv.conf
