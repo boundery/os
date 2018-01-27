@@ -1,0 +1,254 @@
+#!/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+
+#
+# Global variables
+#
+# No, most of them don't have to be declared.
+# It's just nice to have a list here.
+#
+
+progname="${0##*/}"
+dflag=
+kflag=
+nflag=
+pidfile=/run/netd.pid
+qflag=
+vflag=
+
+ifs_known=
+ifs_running=
+ifs_connected=
+daemons_running=
+
+
+#
+# Main
+#
+
+main() {
+    parseargs "$@" || return 99
+
+    if [ $uflag ]; then
+        local dflag=1
+        unmountall
+        return 0
+    fi
+
+    if [ "$SUBSYSTEM" != block -o "$DEVTYPE" != partition ]; then
+        return 0
+    fi
+
+    case "$ACTION" in
+    (add)
+        add "$DEVNAME"
+        return $?
+        ;;
+    (remove)
+        remove "$DEVNAME"
+        return $?
+        ;;
+    esac
+
+    return 0
+}
+
+parseargs() {
+    while getopts dnquv opt; do
+        case $opt in
+        (d)
+            dflag=1
+            ;;
+        (n)
+            nflag=1
+            ;;
+        (q)
+            qflag=1
+            ;;
+        (u)
+            uflag=1
+            ;;
+        (v)
+            vflag=1
+            ;;
+        (\?)
+            usage
+            return 1
+            ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
+    # just ignore the rest of argv
+
+    return 0
+}
+
+usage() {
+    {
+    echo "Usage: $progname [-dknqv] [-p pid-file]"
+    echo "    -d   debug, log to stdout, log more"
+    echo "    -n   dry run, don't execute any action"
+    echo "    -q   quiet, log less"
+    echo "    -u   unmount everything"
+    echo "    -v   verbose, log more"
+    } >&2
+}
+
+unmountall() {
+    local mnt="/run/mnt"
+    local devs="$(listdir "$mnt" "sd[a-z]*")"
+
+    if [ -d "$mnt/vg0-lv0" ]; then
+        run umount "$mnt/vg0-lv0"
+        run rmdir "$mnt/vg0-lv0"
+    fi
+    run lvchange -an vg0/lv0
+    local dev
+    for dev in $devs; do
+        remove $dev
+    done
+}
+
+add() {
+    local dev="/dev/$1"
+    local mnt="/run/mnt/$1"
+    local dir="$mnt/prjx/storage"
+
+    debug "adding $dev"
+
+    # XXX check $dev and $mnt mount status
+    run mkdir -p "$mnt"
+    run mount "$dev" "$mnt"
+    if [ $? -ne 0 ]; then
+        run umount "$mnt"
+        error "failed to mount $dev on $mnt"
+        return 1
+    fi
+    if [ ! -d "$dir" ]; then
+        run umount "$mnt"
+        error "device $dev has not been provisioned"
+        return 1
+    fi
+    local pvs="$(listdir "$dir" "pv[0-9][0-9][0-9]")"
+    if [ "$pvs" = "" ]; then
+        run umount "$mnt"
+        error "device $dev doesn't have any partition files"
+        return 1
+    fi
+    local pv
+    for pv in $pvs; do
+        local f="$dir/$pv"
+        debug "adding physical partition $f"
+        run losetup -f "$f"
+    done
+
+    run lvchange -ay --activationmode complete vg0/lv0
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    local vdev="/dev/vg0/lv0"
+    local vdir="/run/mnt/vg0-lv0"
+    n=10
+    while [ ! -e "$vdev" ]; do
+        if [ $n -lt 10 -a $(($n % 2)) -eq 0 ]; then
+            info "waiting for logical volume $vdev...$(($n / 2))"
+        fi
+        n=$(($n - 1))
+        if [ $n -lt 0 ]; then
+            error "timed out waiting for logical volume $vdev"
+            return 1
+        fi
+        sleep 0.5
+    done
+    run mkdir -p "$vdir"
+    run mount "$vdev" "$vdir"
+    if [ $? -ne 0 ]; then
+        error "failed to mount logical volume $vdev on $vdir"
+        run rmdir "$vdir"
+        return 1
+    fi
+    info "logical volume $vdev mounted on $vdir"
+    return 0
+}
+
+remove() {
+    local dev="/dev/$1"
+    local mnt="/run/mnt/$1"
+    local dir="$mnt/prjx/storage"
+
+    local pv
+    for pv in $(listdir "$dir" "pv[0-9][0-9][0-9]"); do
+        local loopdevs=$(losetup -j "$dir/$pv" | sed 's,^\(/dev/loop[1-9][0-9]*\):.*,\1,')
+        local loopdev
+        for loopdev in $loopdevs; do
+            run losetup -d $loopdev
+        done
+    done
+
+    sleep 1	# XXX
+    run umount "$dev"
+    run rmdir "$mnt"
+}
+
+listdir() {
+    local dir="$1"
+    local pat="$2"
+
+    (cd "$dir" && ls -d $pat) 2>/dev/null
+}
+
+
+#
+# Logging and debugging
+#
+
+log() {
+    local prio="$1"
+    shift
+
+    if [ "$dflag" ]; then
+        echo "$*"
+        return
+    fi
+    logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
+}
+
+error() {
+    log err "$@"
+}
+
+warning() {
+    log warning "$@"
+}
+
+info() {
+    [ "$qflag" ] || log info "$@"
+}
+
+debug() {
+    [ "$dflag" ] && log debug "$@"
+}
+
+verbose() {
+    [ "$vflag" ] && log info "$@"
+}
+
+run() {
+    verbose "$*"
+    if [ "$dflag" ]; then
+        "$@"
+    else
+        "$@" 2>/dev/null
+    fi
+}
+
+
+#
+# Run
+#
+
+main "$@"
+exit $?

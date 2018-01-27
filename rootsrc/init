@@ -18,6 +18,14 @@ klogd -c5
 
 echo 5 >/proc/sys/kernel/panic
 
+mkdir -p /tmp/lvm/etc
+cp /etc/lvm/lvm.conf /tmp/lvm/etc
+mount --bind /tmp/lvm/etc /etc/lvm
+
+echo >/dev/mdev.seq
+echo /sbin/mdev >/proc/sys/kernel/hotplug
+mdev -s &
+
 modprobe brcmfmac
 (netd &)
 
@@ -29,6 +37,8 @@ startdocker
 #XXX eventually this will be some form of getty
 setsid -cw bash -l
 
+kill `cat /var/run/dockerd.pid`
+storagemgr -u -v
 netd -k
 umount -a
 sync
