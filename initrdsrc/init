@@ -17,6 +17,15 @@ BASENAME=`cat /boot/basename.txt`
 mount -tsquashfs /boot/layers/$BASENAME.sqfs /boot/layers/$BASENAME
 mount -tsquashfs /boot/layers/osroot.sqfs /boot/layers/osroot
 mount -toverlay overlay -olowerdir=/boot/layers/osroot:/boot/layers/$BASENAME /newroot
+# XXX debugging: mount a writable overlay on top of /
+#mount -ttmpfs tmpfs -osize=128M /boot/overlay
+#mkdir /boot/overlay/root
+#mkdir /boot/overlay/work
+#mount -toverlay overlay \
+#      -olowerdir=/newroot \
+#      -oupperdir=/boot/overlay/root \
+#      -oworkdir=/boot/overlay/work \
+#      /newroot
 mount --move /proc /newroot/proc
 mount --move /dev /newroot/dev
 mount --move /boot /newroot/boot
