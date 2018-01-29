@@ -1,6 +1,6 @@
-ARG FROM_CONTAINER
+ARG FROM_PREFIX
 
-FROM ${FROM_CONTAINER}
+FROM ${FROM_PREFIX}busybox:1.28.0-uclibc
 
 RUN mkdir /boot /newroot
 

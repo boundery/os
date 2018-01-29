@@ -48,16 +48,14 @@ SERIAL_TTY=ttyAMA0
 UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
 CROSS_PREFIX=arm-linux-gnueabihf-
-DEBIAN_CONTAINER := arm32v7/debian:$(DEBIAN_RELEASE)-slim
-BUSYBOX_CONTAINER := arm32v7/busybox:$(BUSYBOX_VERSION)
+FROM_PREFIX=arm32v7/
 else ifeq ($(ARCH), amd64)
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
 KERNEL_EXTRAS=
 SERIAL_TTY=ttyS0
 CROSS_PREFIX=
-DEBIAN_CONTAINER := debian:$(DEBIAN_RELEASE)-slim
-BUSYBOX_CONTAINER := busybox:$(BUSYBOX_VERSION)
+FROM_PREFIX=
 else
 $(error ARCH $(ARCH) is not supported)
 endif
@@ -93,11 +91,12 @@ KCONFIGDIR := $(SRCDIR)/kconfig
 ROOTSRCDIR := $(SRCDIR)/rootsrc
 INITRDSRCDIR := $(SRCDIR)/initrdsrc
 DEVELDIR := $(SRCDIR)/devel
+CONTAINERDIR := $(SRCDIR)/containers
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 INITRDDIR := $(BUILDDIR)/initrd
-ROOTFSDIR := $(BUILDDIR)/rootfs
-OSFSDIR := $(ROOTFSDIR)/osroot
+FSDIR := $(BUILDDIR)/fs
+OSFSDIR := $(FSDIR)/rootfs
 EXTRADEBDIR := $(BUILDDIR)/extradebs
 KERNELDIR := $(BUILDDIR)/linux
 IMGFSDIR := $(BUILDDIR)/imgfs
@@ -109,8 +108,6 @@ BOOTFWDIR := $(BUILDDIR)/bootfw
 KERNFWDIR := $(BUILDDIR)/kernfw
 endif
 
-BUILDROOTID := $(shell echo $(SRCDIR) | sha1sum | cut -b1-10)
-
 FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
 
 ###########################
@@ -120,10 +117,15 @@ FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
 #XXX new enough cross tools, u-boot-tools (mkenvimage), mtools, grub (EFI and pc),
 #    docker, xorriso, etc.
 
-#Make sure binfmt is configured properly.
+#Make sure binfmt is configured properly for cross-builds
 ifneq ($(shell echo '50c12d79f40fc1cacc4819ae9bac6bb1  /proc/sys/fs/binfmt_misc/qemu-arm' | \
 	md5sum -c --quiet; echo $$?),0)
 $(error Run "sudo script/qemu-arm-static.sh")
+endif
+
+#Make sure docker experimental is enabled for "docker build --squash"
+ifneq ($(shell docker info 2>/dev/null | grep -c '^Experimental: true'),1)
+$(error Enable "experimental" in /etc/docker/daemon.json)
 endif
 
 #########
@@ -170,7 +172,7 @@ KERNEL_MOD_INSTALL := $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
 $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 	( cd $(KERNELDIR); \
-	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
+	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	          INSTALL_MOD_PATH=$(OSFSDIR) \
 	          modules_install )
@@ -237,7 +239,7 @@ KERNFW_INSTALL_DIR := $(OSFSDIR)/lib/firmware/brcm
 KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw-610.812
 kernfw_install: $(KERNFW_INSTALL)
 $(KERNFW_INSTALL): $(KERNFW_SRC) # see below for additional deps
-	$(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
+	$(FAKEROOT) -s $(FSDIR)/fakeroot \
 	    sh -ce 'mkdir -p $(KERNFW_INSTALL_DIR); \
 	            cp -rT $(KERNFWDIR)/brcm $(KERNFW_INSTALL_DIR); \
 	            find $(KERNFW_INSTALL_DIR) \
@@ -260,6 +262,36 @@ uboot_env_clean:
 
 endif # }
 
+INITRD := $(IMGFSDIR)/initrd
+initrd: $(INITRD)
+$(INITRD): $(INITRDSRCDIR)/*
+	@mkdir -p $(IMGFSDIR)
+	@rm -rf $(INITRDDIR) $(INITRDDIR).fakeroot
+	@mkdir -p $(INITRDDIR)
+	docker build $(DOCKER_BUILD_PROXY) \
+	  --build-arg FROM_PREFIX=$(FROM_PREFIX) \
+	  -t $(FROM_PREFIX)initrd $(INITRDSRCDIR)
+	docker container create --name=$(shell echo $(FROM_PREFIX) | tr -d '/')initrd \
+	  $(FROM_PREFIX)initrd
+	docker export $(shell echo $(FROM_PREFIX) | tr -d '/')initrd | \
+	  $(FAKEROOT) -s $(INITRDDIR).fakeroot tar xpf - -C$(INITRDDIR)
+	$(FAKEROOT) -s $(INITRDDIR).fakeroot \
+	  mknod $(INITRDDIR)/dev/console c 5 1
+	( cd $(INITRDDIR) ; \
+	  find . | $(FAKEROOT) $(INITRDDIR).fakeroot cpio -o -H newc ) | \
+	    gzip > $(INITRD)
+ifndef KEEP_CONTAINER
+	docker rm $(shell echo $(FROM_PREFIX) | tr -d '/')initrd
+	docker rmi $(FROM_PREFIX)initrd
+endif
+
+PHONY += initrd_clean
+initrd_clean:
+	docker rm -f $(FROM_PREFIX)initrd >/dev/null 2>&1 || true
+	docker rmi -f $(FROM_PREFIX)initrd >/dev/null 2>&1 || true
+	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
+
+#XXX Fold this into the Dockerfile.
 EXTRA_DEB_URLS=$(SRCDIR)/extra_deb_urls
 EXTRA_DEBS := $(shell $(SCRIPTDIR)/urls-to-files $(ARCH) $(EXTRADEBDIR) <$(EXTRA_DEB_URLS))
 extra_debs: $(EXTRA_DEBS)
@@ -274,109 +306,90 @@ PHONY += extra_debs_clean
 extra_debs_clean:
 	rm -rf $(EXTRADEBDIR)
 
-ROOTFS := $(ROOTFSDIR)/basename.txt
+ROOTFS := $(FSDIR)/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
-	@rm -rf $(ROOTFSDIR)
-	@mkdir -p $(ROOTFSDIR)
-	tar zcf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
+	@rm -rf $(OSFSDIR)
+	@mkdir -p $(FSDIR)
+	@mkdir -p $(IMGFSDIR)/layers
+	tar cf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
 	  docker build $(DOCKER_BUILD_PROXY) \
-	  --build-arg FROM_CONTAINER=$(DEBIAN_CONTAINER) \
-	  --force-rm=true -t rootfs-$(BUILDROOTID) -
-	docker save rootfs-$(BUILDROOTID) | \
-	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
-	  $(SCRIPTDIR)/untar-docker-image $(ROOTFSDIR)
-	$(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
+	  --build-arg FROM_PREFIX=$(FROM_PREFIX) --squash \
+	  --force-rm=true -t $(FROM_PREFIX)rootfs -
+	docker save $(FROM_PREFIX)rootfs | \
+	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
+	  $(SCRIPTDIR)/untar-docker-image --savelayernames rootfs.layers $(FSDIR)
+	mv $(FSDIR)/`tail -n1 $(FSDIR)/rootfs.layers` $(OSFSDIR) #So mod/fw/etc install can find it.
+	sed -i '$$s/.*/rootfs/' $(FSDIR)/rootfs.layers
+	$(FAKEROOT) -s $(FSDIR)/fakeroot \
 	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
-ifndef KEEP_CONTAINER
-	-docker rmi rootfs-$(BUILDROOTID)
-endif
 	@[ ! -d $(DEVELDIR)/rootfs ] || \
-	  $(FAKEROOT) -s $(ROOTFSDIR)/fakeroot \
-	    cp -r $(DEVELDIR)/rootfs/. $(OSFSDIR)
+	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
+	  cp -r $(DEVELDIR)/rootfs/. $(OSFSDIR)
+	cp $(FSDIR)/rootfs.layers $(IMGFSDIR)/layers/
+ifndef KEEP_CONTAINER
+	-docker rmi $(FROM_PREFIX)rootfs
+endif
+CONTAINERS += $(ROOTFS)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
 $(KERNFW_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
-	docker rmi rootfs-$(BUILDROOTID) >/dev/null 2>&1 || true
+	docker rmi $(FROM_PREFIX)rootfs >/dev/null 2>&1 || true
 	docker images -f dangling=true -q | xargs -r docker rmi
-	rm -rf $(ROOTFSDIR)
+	rm -rf $(FSDIR)/{`cat $(FSDIR)/rootfs.layers`
+	rm $(FSDIR)/rootfs.layers
 
-#This depends on ROOTFS, because "docker save" won't download the image.
-CONTID := $(shell docker inspect $(DEBIAN_CONTAINER) --format '{{.RootFS.Layers}}' | tr -d '[]' | cut -d':' -f2)
-CONTAINERS := $(IMGFSDIR)/layers/$(CONTID).off
-containers: $(CONTAINERS)
-$(CONTAINERS): $(ROOTFS) $(SCRIPTDIR)/docker-split-image
-	mkdir -p $(IMGFSDIR)/layers
-	docker save $(DEBIAN_CONTAINER) | \
-	  $(SCRIPTDIR)/docker-split-image $(IMGFSDIR)/layers/$(CONTID)
-
-INITRD := $(IMGFSDIR)/initrd
-initrd: $(INITRD)
-$(INITRD): $(INITRDSRCDIR)/*
-	@mkdir -p $(IMGFSDIR)
-	@rm -rf $(INITRDDIR) $(INITRDDIR).fakeroot
-	@mkdir -p $(INITRDDIR)
+PYTHON3 := $(FSDIR)/python3.off
+python3: $(PYTHON3)
+$(PYTHON3): $(CONTAINERDIR)/python3/* $(SCRIPTDIR)/untar-docker-image
+	@mkdir -p $(FSDIR)
+	@mkdir -p $(IMGFSDIR)/layers
 	docker build $(DOCKER_BUILD_PROXY) \
-	  --build-arg FROM_CONTAINER=$(BUSYBOX_CONTAINER) \
-	  -t initrd-$(BUILDROOTID) $(INITRDSRCDIR)
-	docker container create --name=initrd-$(BUILDROOTID) \
-	  initrd-$(BUILDROOTID)
-	docker export initrd-$(BUILDROOTID) | \
-	  $(FAKEROOT) -s $(INITRDDIR).fakeroot tar xpf - -C$(INITRDDIR)
-	$(FAKEROOT) -s $(INITRDDIR).fakeroot \
-	  mknod $(INITRDDIR)/dev/console c 5 1
-	( cd $(INITRDDIR) ; \
-	  find . | $(FAKEROOT) $(INITRDDIR).fakeroot cpio -o -H newc ) | \
-	    gzip > $(INITRD)
+	  --build-arg FROM_PREFIX=$(FROM_PREFIX) --squash \
+	  --force-rm=true -t $(FROM_PREFIX)python3 \
+	  $(CONTAINERDIR)/python3
+	docker save $(FROM_PREFIX)python3 | \
+	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
+	  $(SCRIPTDIR)/untar-docker-image --savelayernames python3.layers \
+	  --savetarfrags python3 $(FSDIR)
+	cp $(FSDIR)/python3.* $(IMGFSDIR)/layers
 ifndef KEEP_CONTAINER
-	docker rm initrd-$(BUILDROOTID)
-	docker rmi initrd-$(BUILDROOTID)
+	-docker rmi $(FROM_PREFIX)python3
 endif
+CONTAINERS += $(PYTHON3)
 
-PHONY += initrd_clean
-initrd_clean:
-	docker rm -f initrd-$(BUILDROOTID) >/dev/null 2>&1 || true
-	docker rmi -f initrd-$(BUILDROOTID) >/dev/null 2>&1 || true
-	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
+PHONY += python3_clean
+python3_clean:
+	docker rmi $(FROM_PREFIX)python3 >/dev/null 2>&1 || true
+	docker images -f dangling=true -q | xargs -r docker rmi
+	rm -rf $(FSDIR)/{`cat $(FSDIR)/python3.layers`
+	rm $(FSDIR)/python3.*
 
-BASESQUASHFS := $(IMGFSDIR)/layers/$(CONTID).sqfs
-basesquashfs: $(BASESQUASHFS)
-$(BASESQUASHFS): $(ROOTFS)
-	@mkdir -p $(IMGFSDIR)/layers/$(CONTID)
-	@rm -f $(BASESQUASHFS)
-	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
-	  mksquashfs $(ROOTFSDIR)/$(CONTID) $(BASESQUASHFS)
+SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
+squashfs: $(SQUASHFS)
+$(SQUASHFS): $(CONTAINERS)
+	for fs in $(FSDIR)/*; do \
+	    if [ -d $$fs ]; then \
+	        mkdir -p $(IMGFSDIR)/layers/`basename $$fs` ; \
+	        $(FAKEROOT) $(FSDIR)/fakeroot \
+	          mksquashfs $$fs $(IMGFSDIR)/layers/`basename $$fs`.sqfs -noappend ; \
+	    fi ; \
+	done
 
-PHONY += basesquashfs_clean
-basesquashfs_clean:
-	rm -f $(BASESQUASHFS)
-
-OSSQUASHFS := $(IMGFSDIR)/layers/osroot.sqfs
-ossquashfs: $(OSSQUASHFS)
-$(OSSQUASHFS): $(ROOTFS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
-	@mkdir -p $(IMGFSDIR)
-	@mkdir -p $(IMGFSDIR)/layers/osroot
-	@rm -rf $(OSSQUASHFS)
-	$(FAKEROOT) $(ROOTFSDIR)/fakeroot \
-	  mksquashfs $(OSFSDIR) $(OSSQUASHFS)
-
-PHONY += ossquashfs_clean
-ossquashfs_clean:
-	rm -f $(OSSQUASHFS)
+PHONY += squashfs_clean
+squashfs_clean:
+	rm -rf $(IMGFSDIR)/layers/*.sqfs
 
 ###############
 # Image Targets
 
 IMG_DEPS = \
 	$(INITRD) \
-	$(BASESQUASHFS) \
-	$(OSSQUASHFS) \
 	$(KERNEL) \
-	$(CONTAINERS) \
-	$(ROOTFSDIR)/basename.txt \
+	$(SQUASHFS) \
 	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
 	$(wildcard $(DEVELDIR)/imgfs/*)
 ifeq ($(ARCH), armhf)

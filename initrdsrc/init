@@ -13,10 +13,12 @@ mount /boot
 #sh
 
 # Switch to the real root.
-BASENAME=`cat /boot/basename.txt`
-mount -tsquashfs /boot/layers/$BASENAME.sqfs /boot/layers/$BASENAME
-mount -tsquashfs /boot/layers/osroot.sqfs /boot/layers/osroot
-mount -toverlay overlay -olowerdir=/boot/layers/osroot:/boot/layers/$BASENAME /newroot
+for i in `cat /boot/layers/rootfs.layers`; do
+    mount -tsquashfs /boot/layers/$i.sqfs /boot/layers/$i
+    LAYERS=/boot/layers/$i:$LAYERS
+done
+LAYERS=`echo $LAYERS | rev | cut -c2- | rev` #Remove trailing ':'
+mount -toverlay overlay -olowerdir=$LAYERS /newroot
 # XXX debugging: mount a writable overlay on top of /
 #mount -ttmpfs tmpfs -osize=128M /boot/overlay
 #mkdir /boot/overlay/root

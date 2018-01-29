@@ -1,6 +1,6 @@
-ARG FROM_CONTAINER
+ARG FROM_PREFIX
 
-FROM ${FROM_CONTAINER}
+FROM ${FROM_PREFIX}debian:stretch-slim
 
 COPY *.deb /debs/
 

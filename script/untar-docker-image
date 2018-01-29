@@ -7,12 +7,16 @@ import tarfile
 import json
 import io
 import hashlib
+import argparse
+import copy
 
-if len(sys.argv) != 2:
-    print("Usage: %s extract_dir" % sys.argv[0], file=sys.stderr)
-    sys.exit(99)
-outpath = sys.argv[1]
+parser = argparse.ArgumentParser(description="Extract docker images + metadata")
+parser.add_argument("outdir", help="directory to put extracted dirs/files into")
+parser.add_argument("--savetarfrags", help="save enough info to recreate tar image")
+parser.add_argument("--savelayernames", help="save the list of layers")
+args = parser.parse_args()
 
+#Wrapper that SHA256s the contents of the stream.
 class SHA256Pipe(io.RawIOBase):
     def __init__(self, fd):
         self.fd = fd
@@ -25,54 +29,84 @@ class SHA256Pipe(io.RawIOBase):
     def hexdigest(self):
         return self.hasher.hexdigest()
 
-def merge_layer(layer, base):
-    #print("DEBUG About to walk %s" % layer)
+#Wrapper that saves bytes from the stream for later.
+class SavePipe(io.RawIOBase):
+    def __init__(self, fd):
+        self.fd = fd
+        self.buffer = bytearray()
+        self.offset = 0
+    def readinto(self, b):
+        l = self.fd.readinto(b)
+        if l > 0:
+            self.buffer += b[0:l]
+        return l
+    def get_bytes(self, start, stop):
+        if stop:
+            ret = self.buffer[start - self.offset:stop - self.offset]
+            del(self.buffer[:stop - self.offset])
+            self.offset += (stop - self.offset)
+        else:
+            ret = self.buffer[start - self.offset:]
+        return ret
 
-    to_rmdir = []
-    for subdir in os.walk(layer, topdown=True):
-        #print("DEBUG %s" % subdir[0])
+if args.savetarfrags:
+    outbin = open(os.path.join(args.outdir, "%s.bin" % args.savetarfrags), "wb")
+    outoff = open(os.path.join(args.outdir, "%s.off" % args.savetarfrags), "wt")
+    off = 0
+    outbincnt = 0
+    tarstream = SavePipe(sys.stdin.buffer)
+else:
+    tarstream = sys.stdin.buffer
 
-        for f in subdir[2]:
-            if f.startswith(".wh."):
-                #print("DEBUG Whiting out %s" % f[4:])
-                os.unlink(os.path.join(subdir[0], f))
+#Like tarfile.extract_all, but also (optionally) generates the .bin/.off data.
+def extract_all(tar, outdir, offset_data):
+    global outbin, outoff, off, outbincnt, tarstream
+    dirs = []
+    offsets = []
 
-                lside = os.path.join(subdir[0], f[4:])
-                bside = os.path.join(base + subdir[0][len(layer):], f[4:])
-                for i in lside, bside:
-                    if os.path.lexists(i):
-                        if os.path.isdir(i):
-                            shutil.rmtree(i)
-                        else:
-                            os.unlink(i)
-            else:
-                #print("DEBUG Moving file: %s" % os.path.join(subdir[0], f))
-                os.rename(os.path.join(subdir[0], f),
-                          os.path.join(base + subdir[0][len(layer):], f))
+    for tinfo in tar:
+        if args.savetarfrags:
+            if tinfo.size != 0:
+                outbin.write(tarstream.get_bytes(off,
+                                                 offset_data + tinfo.offset_data))
+                offsets.append("%s %s\n" % (outbincnt,
+                                            offset_data + tinfo.offset_data - off))
+                outbincnt += offset_data + tinfo.offset_data - off
+                offsets.append("F %s\n" % tinfo.name)
+                off = offset_data + tinfo.offset_data + tinfo.size
 
-        for d in subdir[1]:
-            #print("DEBUG Moving dir %s" % os.path.join(subdir[0], d))
-            lside = os.path.join(subdir[0], d)
-            bside = os.path.join(base + subdir[0][len(layer):], d)
-            if os.path.exists(bside): #Update user/group/perms
-                lstat = os.stat(lside)
-                #Linux doesn't have chflags, but it probably doesn't matter.
-                #os.chflags(bside, lstat.st_flags)
-                os.chmod(bside, lstat.st_mode)
-                os.chown(bside, uid=lstat.st_uid, gid=lstat.st_gid)
-                #Can't set ctime.  Does it matter?
-                os.utime(bside, ns=(lstat.st_atime_ns, lstat.st_mtime_ns))
-                to_rmdir.append(lside)
-            else:
-                os.rename(lside, bside)
+        if tinfo.isdir():
+            dirs.append(tinfo) #Save so we can fix the mode later.
+            #Go with a mode that won't prevent us from creating files/dirs later.
+            tinfo = copy.copy(tinfo)
+            tinfo.mode = 0o700
+        tar.extract(tinfo, outdir,
+                    set_attrs=not tinfo.isdir(), numeric_owner=True)
 
-    #Remove dups and sort by path length.
-    to_rmdir = sorted(set(to_rmdir), key=len, reverse=True)
-    for d in to_rmdir:
-        os.rmdir(d)
+    #Reverse sort so set setattrs in the right order.
+    dirs.sort(key=lambda x: x.name)
+    dirs.reverse()
+
+    #Set the attributes of dirs, since we didn't set them above.
+    for tinfo in dirs:
+        dirpath = os.path.join(outdir, tinfo.name)
+        tar.chown(tinfo, dirpath, numeric_owner=True)
+        tar.utime(tinfo, dirpath)
+        tar.chmod(tinfo, dirpath)
+
+    return offsets
+
+def walktree(t):
+    s = set()
+    for f in os.scandir(t):
+        st = f.stat(follow_symlinks = False)
+        s.add((f.name, st.st_mode, st.st_dev, st.st_nlink, st.st_uid, st.st_gid, st.st_size))
+        if f.is_dir(follow_symlinks = False):
+            s |= walktree(f.path)
+    return s
 
 jsonfiles = {}
-tar = tarfile.open(fileobj=sys.stdin.buffer, mode="r|")
+tar = tarfile.open(fileobj=tarstream, mode="r|")
 for tinfo in tar:
     name = tinfo.name
 
@@ -83,37 +117,44 @@ for tinfo in tar:
         hashwrapper = SHA256Pipe(tar.extractfile(tinfo))
         innertar = tarfile.open(fileobj=hashwrapper, mode="r|")
 
-        layerpath = os.path.join(outpath, os.path.dirname(name))
+        layerpath = os.path.join(args.outdir, os.path.dirname(name))
         os.mkdir(layerpath)
         print("Extracting to %s" % layerpath)
-        innertar.extractall(path=layerpath, numeric_owner=True)
+        offsets = extract_all(innertar, layerpath, tinfo.offset_data)
 
         #Close, then read any leftover padding so the hash is correct.
         innertar.close()
         hashwrapper.readall()
 
-        diffidpath = os.path.join(outpath, hashwrapper.hexdigest())
-        print("Moving to %s" % diffidpath)
-        os.rename(layerpath, diffidpath)
+        diffidpath = os.path.join(args.outdir, hashwrapper.hexdigest())
+        if os.path.isdir(diffidpath):
+            print("%s alreayd exists, skipping" % diffidpath)
+            assert(walktree(diffidpath) == walktree(layerpath))
+            shutil.rmtree(layerpath)
+        else:
+            print("Moving to %s" % diffidpath)
+            os.rename(layerpath, diffidpath)
+
+        #We don't write the offsets immediately, since we don't know the name
+        # then.
+        if args.savetarfrags:
+            outoff.write("CD %s\n" % hashwrapper.hexdigest())
+            for offset in offsets:
+                outoff.write(offset)
+tar.close()
 
 json = jsonfiles[jsonfiles["manifest.json"][0]["Config"]]
 diffids = [ x.split(':')[1] for x in json["rootfs"]["diff_ids"] ]
 
-#First is the base image, save its name.
-with open(os.path.join(outpath, "basename.txt"), "w") as brtxt:
-    brtxt.write("%s\n" % diffids.pop(0))
+if args.savetarfrags:
+    b = tarstream.get_bytes(off, None)
+    outbin.write(b)
+    outoff.write("%s %s\n" % (outbincnt, len(b)))
 
-#Rename the lowest os layer.
-ospath = os.path.join(outpath, "osroot")
-os.rename(os.path.join(outpath, diffids.pop(0)), ospath)
+    outbin.close()
+    outoff.close()
 
-#Iterate over all remaining os layers, merging them in to ospath.
-for diffid in diffids:
-    layer = os.path.join(outpath, diffid)
-    print("Merging %s" % layer)
-
-    merge_layer(layer, ospath)
-
-    os.rmdir(layer)
-
-tar.close()
+if args.savelayernames:
+    with open(os.path.join(args.outdir, args.savelayernames), "w") as l:
+        for did in diffids:
+            l.write("%s\n" % did)

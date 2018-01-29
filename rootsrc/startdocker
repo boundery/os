@@ -21,14 +21,25 @@ while ! docker info >/dev/null 2>&1; do
     sleep 0.5
 done
 
-#XXX To support multiple containers, this will need to get more clever.
 if ! docker images | grep -q ^debian; then
-    BASENAME=`cat /boot/basename.txt`
-    unsplit-tar /boot/layers/$BASENAME /boot/layers/$BASENAME | docker load
-    for i in /var/lib/docker/overlay2/*; do
-        if [ -d $i/diff ]; then
-            rm -rf $i/diff
-            ln -sf /boot/layers/$BASENAME $i/diff
-        fi
+    for i in /boot/layers/*.layers; do
+        if [ "$i" = "/boot/layers/rootfs.layers" ]; then continue; fi
+
+        for layer in `cat $i`; do
+            if mountpoint -q /boot/layers/$layer; then continue; fi
+            mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
+        done
+
+        unsplit-tar ${i%.*} /boot/layers | docker load
+
+        for layer in `cat $i`; do
+            if [ "$i" = "/boot/layers/rootfs.layers" ]; then continue; fi
+            DIRNAME=`grep $layer /var/lib/docker/image/overlay2/layerdb/sha256/*/diff | cut -d'/' -f9`
+            CACHEID=`cat /var/lib/docker/image/overlay2/layerdb/sha256/$DIRNAME/cache-id`
+            if [ -h /var/lib/docker/overlay2/$CACHEID ]; then continue; fi
+
+            rm -rf /var/lib/docker/overlay2/$CACHEID/diff
+            ln -sf /boot/layers/$layer /var/lib/docker/overlay2/$CACHEID/diff
+        done
     done
 fi
