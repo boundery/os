@@ -370,7 +370,7 @@ python3_clean:
 
 SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
 squashfs: $(SQUASHFS)
-$(SQUASHFS): $(CONTAINERS)
+$(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 	for fs in $(FSDIR)/*; do \
 	    if [ -d $$fs ]; then \
 	        mkdir -p $(IMGFSDIR)/layers/`basename $$fs` ; \
