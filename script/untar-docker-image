@@ -128,7 +128,7 @@ for tinfo in tar:
 
         diffidpath = os.path.join(args.outdir, hashwrapper.hexdigest())
         if os.path.isdir(diffidpath):
-            print("%s alreayd exists, skipping" % diffidpath)
+            print("%s already exists, skipping" % diffidpath)
             assert(walktree(diffidpath) == walktree(layerpath))
             shutil.rmtree(layerpath)
         else:
