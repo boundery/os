@@ -140,8 +140,8 @@ all_clean:
 	@rm -rf $(BUILDDIR)/..
 
 PHONY += clean
-clean: rootfs_clean initrd_clean
-	@rm -rf $(BUILDDIR)
+clean: rootfs_clean python3_clean initrd_clean
+	rm -rf $(BUILDDIR)
 
 KERNEL_SRC := $(KERNELDIR)/Makefile
 kernel_src: $(KERNEL_SRC)
@@ -309,9 +309,9 @@ extra_debs_clean:
 ROOTFS := $(FSDIR)/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
-	@rm -rf $(OSFSDIR)
 	@mkdir -p $(FSDIR)
 	@mkdir -p $(IMGFSDIR)/layers
+	@$(FAKEROOT) -s $(FSDIR)/fakeroot rm -rf $(OSFSDIR)
 	tar cf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
 	  docker build $(DOCKER_BUILD_PROXY) \
 	  --build-arg FROM_PREFIX=$(FROM_PREFIX) --squash \
@@ -339,8 +339,10 @@ PHONY += rootfs_clean
 rootfs_clean:
 	docker rmi $(FROM_PREFIX)rootfs >/dev/null 2>&1 || true
 	docker images -f dangling=true -q | xargs -r docker rmi
-	rm -rf $(FSDIR)/{`cat $(FSDIR)/rootfs.layers`
-	rm $(FSDIR)/rootfs.layers
+	[ -d $(FSDIR) ] && \
+	  cd $(FSDIR); \
+	  rm -rf `cat rootfs.layers 2>/dev/null` rootfs.layers
+	rm -f $(IMGFSDIR)/layers/rootfs.layers
 
 PYTHON3 := $(FSDIR)/python3.off
 python3: $(PYTHON3)
@@ -365,8 +367,14 @@ PHONY += python3_clean
 python3_clean:
 	docker rmi $(FROM_PREFIX)python3 >/dev/null 2>&1 || true
 	docker images -f dangling=true -q | xargs -r docker rmi
-	rm -rf $(FSDIR)/{`cat $(FSDIR)/python3.layers`
-	rm $(FSDIR)/python3.*
+	[ -d $(FSDIR) ] && \
+	  cd $(FSDIR); \
+	  rm -rf `cat python3.layers 2>/dev/null` python3.*
+	rm -f $(IMGFSDIR)/layers/python3.*
+
+PHONY += fs_clean
+fs_clean: rootfs_clean python3_clean
+	rm -rf $(FSDIR)
 
 SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
 squashfs: $(SQUASHFS)
@@ -381,7 +389,9 @@ $(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
 
 PHONY += squashfs_clean
 squashfs_clean:
-	rm -rf $(IMGFSDIR)/layers/*.sqfs
+	for fs in $(IMGFSDIR)/layers/*.sqfs; do \
+	    rm -rf $${fs%.sqfs} $$fs; \
+	done
 
 ###############
 # Image Targets
@@ -408,7 +418,7 @@ rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_DEPS) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
-	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 128 $(IMGFSDIR)/*
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:
@@ -426,5 +436,11 @@ $(PC_IMG): $(IMG_DEPS)
 PHONY += pc_img_clean
 pc_img_clean:
 	rm $(PC_IMG)
+
+ifeq ($(ARCH), armhf)
+img: rpi3_img
+else ifeq ($(ARCH), amd64)
+img: pc_img
+endif
 
 .PHONY: $(PHONY)
