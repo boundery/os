@@ -21,11 +21,13 @@ echo 5 >/proc/sys/kernel/panic
 modprobe brcmfmac
 (netd &)
 
+#Start docker daemon
 mkdir -p /tmp/docker/etc
 mount -t tmpfs tmpfs /var/lib/docker
 mount --bind /tmp/docker/etc /etc/docker
 startdocker
 
+#Bring up mdev to run storage manager
 mkdir -p /tmp/lvm/etc
 cp /etc/lvm/lvm.conf /tmp/lvm/etc
 mount --bind /tmp/lvm/etc /etc/lvm
@@ -33,6 +35,17 @@ mount --bind /tmp/lvm/etc /etc/lvm
 echo >/dev/mdev.seq
 echo /sbin/mdev >/proc/sys/kernel/hotplug
 mdev -s &
+
+#Start zerotier system containers
+#XXX Need to put /var/lib/zerotier-one somewhere persistent, so we can
+#    upgrade the ZT container.
+chmod og+rw /dev/net/tun
+if [ -f /boot/zerotier.conf ]; then
+     . /boot/zerotier.conf
+     docker run -d --net=host -e ZEROTIER_TOKEN=${ZEROTIER_TOKEN} \
+            --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun \
+            --name zerotier zerotier
+fi
 
 #XXX eventually this will be some form of getty
 setsid -cw bash -l

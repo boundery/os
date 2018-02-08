@@ -340,8 +340,20 @@ storagemgr_clean:
 		$(FSDIR) \
 		$(IMGFSDIR)/layers
 
+ZEROTIER := $(FSDIR)/zerotier.off
+zerotier: $(ZEROTIER)
+$(ZEROTIER): $(PYTHON3) $(CONTAINERDIR)/zerotier/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t zerotier '$(FROM_PREFIX)' \
+	  $(CONTAINERDIR)/zerotier $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(ZEROTIER)
+
+PHONY += zerotier_clean
+zerotier_clean:
+	$(SCRIPTDIR)/mkcontainer -c zerotier '$(FROM_PREFIX)' \
+	  $(FSDIR) $(IMGFSDIR)/layers
+
 PHONY += fs_clean
-fs_clean: rootfs_clean python3_clean storagemgr_clean
+fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean
 	rm -rf $(FSDIR)
 
 SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
