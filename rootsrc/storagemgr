@@ -14,7 +14,7 @@ progname="${0##*/}"
 dflag=
 kflag=
 nflag=
-pidfile=/run/netd.pid
+pflag=
 qflag=
 vflag=
 
@@ -37,6 +37,12 @@ main() {
         return 0
     fi
 
+    if [ $pflag ]; then
+        local dflag=1
+        provision "$pflag" 4000
+        return $?
+    fi
+
     if [ "$SUBSYSTEM" != block -o "$DEVTYPE" != partition ]; then
         return 0
     fi
@@ -56,13 +62,16 @@ main() {
 }
 
 parseargs() {
-    while getopts dnquv opt; do
+    while getopts dnp:quv opt; do
         case $opt in
         (d)
             dflag=1
             ;;
         (n)
             nflag=1
+            ;;
+        (p)
+            pflag="$OPTARG"
             ;;
         (q)
             qflag=1
@@ -87,33 +96,120 @@ parseargs() {
 
 usage() {
     {
-    echo "Usage: $progname [-dknqv] [-p pid-file]"
-    echo "    -d   debug, log to stdout, log more"
-    echo "    -n   dry run, don't execute any action"
-    echo "    -q   quiet, log less"
-    echo "    -u   unmount everything"
-    echo "    -v   verbose, log more"
+    echo "Usage: $progname [-dknpqv]"
+    echo "    -d        debug, log to stdout, log more"
+    echo "    -n        dry run, don't execute any action"
+    echo "    -p dev    provision new device"
+    echo "    -q        quiet, log less"
+    echo "    -u        unmount everything"
+    echo "    -v        verbose, log more"
     } >&2
 }
 
 unmountall() {
-    local mnt="/run/mnt"
+    local mnt="/mnt"
     local devs="$(listdir "$mnt" "sd[a-z]*")"
 
-    if [ -d "$mnt/vg0-lv0" ]; then
-        run umount "$mnt/vg0-lv0"
-        run rmdir "$mnt/vg0-lv0"
+    if [ -d "$mnt/vg00-lv00" ]; then
+        run umount "$mnt/vg00-lv00"
+        run rmdir "$mnt/vg00-lv00"
     fi
-    run lvchange -an vg0/lv0
+    run lvchange -an vg00/lv00
     local dev
     for dev in $devs; do
         remove $dev
     done
 }
 
+provision() {
+    local dev="/dev/$1"
+    local size="$2"
+    local mnt="/mnt/$1"
+    local dir="$mnt/prjx/storage"
+    local file="$dir/pv0000"
+
+    if ! [ "$size" -ge 16 -a "$size" -le 4000 ] 2>/dev/null; then
+        error "\"$size\" must be a number between 16 and 4000"
+    fi
+
+    # XXX check $dev and $mnt mount status
+    run mkdir -p "$mnt"
+    run mount "$dev" "$mnt"
+    if [ $? -ne 0 ]; then
+        run umount "$mnt"
+        error "failed to mount $dev on $mnt"
+        return 1
+    fi
+    if [ -d "$dir" ]; then
+        run umount "$mnt"
+        error "device $dev is already provisioned"
+        return 1
+    fi
+
+    info "creating partition file $file size ${size}M"
+    run mkdir -p "$dir"
+    local verbose=
+    if [ $dflag ]; then
+        verbose=status=progress
+    fi
+    run dd if=/dev/zero of="$file" bs=1M count=$size $verbose
+
+    info "creating physical partition"
+    local loopdev=`losetup -f --show "$file"`
+    if [ $? -ne 0 ]; then
+        error "failed to create loopback device for $file"
+        return 1
+    fi
+    run pvcreate "$loopdev"
+    if [ $? -ne 0 ]; then
+        error "failed to create physical volume for $file on $loopdev"
+        run losetup -d "$loopdev"
+        return 1
+    fi
+
+    info "creating volume group"
+    run vgcreate vg00 "$loopdev"
+    if [ $? -ne 0 ]; then
+        error "failed to create volume group"
+        run losetup -d "$loopdev"
+        return 1
+    fi
+
+    info "creating logical volume"
+    run lvcreate -an -nlv00 -l100%FREE vg00
+    if [ $? -ne 0 ]; then
+        error "failed to create logical volume"
+        run losetup -d "$loopdev"
+        return 1
+    fi
+
+    info "activating logical valume"
+    run lvchange -ay --activationmode complete vg00/lv00
+    if [ $? -ne 0 ]; then
+        error "failed to activate logical volume"
+        return 1
+    fi
+    local vdev="/dev/vg00/lv00"
+    waitlv "$vdev"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    info "creating filesystem"
+    run mkfs -text4 "$vdev"
+
+    info "cleaning up"
+    run lvchange -an vg00/lv00
+    run losetup -d "$loopdev"
+    run umount "$mnt"
+
+    info "attempting to mount new logical volume"
+    add "$1"
+}
+
 add() {
     local dev="/dev/$1"
-    local mnt="/run/mnt/$1"
+    local mnt="/mnt/$1"
     local dir="$mnt/prjx/storage"
 
     debug "adding $dev"
@@ -131,7 +227,7 @@ add() {
         error "device $dev has not been provisioned"
         return 1
     fi
-    local pvs="$(listdir "$dir" "pv[0-9][0-9][0-9]")"
+    local pvs="$(listdir "$dir" "pv[0-9][0-9][0-9][0-9]")"
     if [ "$pvs" = "" ]; then
         run umount "$mnt"
         error "device $dev doesn't have any partition files"
@@ -144,13 +240,31 @@ add() {
         run losetup -f "$f"
     done
 
-    run lvchange -ay --activationmode complete vg0/lv0
+    run lvchange -ay --activationmode complete vg00/lv00
     if [ $? -ne 0 ]; then
         return 1
     fi
 
-    local vdev="/dev/vg0/lv0"
-    local vdir="/run/mnt/vg0-lv0"
+    local vdev="/dev/vg00/lv00"
+    local vdir="/mnt/vg00-lv00"
+    waitlv "$vdev"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    run mkdir -p "$vdir"
+    run mount "$vdev" "$vdir"
+    if [ $? -ne 0 ]; then
+        error "failed to mount logical volume $vdev on $vdir"
+        run rmdir "$vdir"
+        return 1
+    fi
+    info "logical volume $vdev mounted on $vdir"
+    return 0
+}
+
+waitlv() {
+    local vdev="$1"
+
     n=10
     while [ ! -e "$vdev" ]; do
         if [ $n -lt 10 -a $(($n % 2)) -eq 0 ]; then
@@ -163,24 +277,16 @@ add() {
         fi
         sleep 0.5
     done
-    run mkdir -p "$vdir"
-    run mount "$vdev" "$vdir"
-    if [ $? -ne 0 ]; then
-        error "failed to mount logical volume $vdev on $vdir"
-        run rmdir "$vdir"
-        return 1
-    fi
-    info "logical volume $vdev mounted on $vdir"
     return 0
 }
 
 remove() {
     local dev="/dev/$1"
-    local mnt="/run/mnt/$1"
+    local mnt="/mnt/$1"
     local dir="$mnt/prjx/storage"
 
     local pv
-    for pv in $(listdir "$dir" "pv[0-9][0-9][0-9]"); do
+    for pv in $(listdir "$dir" "pv[0-9][0-9][0-9][0-9]"); do
         local loopdevs=$(losetup -j "$dir/$pv" | sed 's,^\(/dev/loop[1-9][0-9]*\):.*,\1,')
         local loopdev
         for loopdev in $loopdevs; do
@@ -188,7 +294,7 @@ remove() {
         done
     done
 
-    sleep 1	# XXX
+    sleep 1     # XXX
     run umount "$dev"
     run rmdir "$mnt"
 }

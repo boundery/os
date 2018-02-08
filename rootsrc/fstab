@@ -3,5 +3,6 @@ proc             /proc       proc      nosuid,noexec,nodev
 devtmpfs         /dev        devtmpfs  nosuid,noexec
 devpts           /dev/pts    devpts    nosuid,noexec,gid=5,mode=620,x-mount.mkdir=755
 tmpfs            /run        tmpfs     size=128k
+tmpfs            /mnt        tmpfs     size=16k,shared
 tmpfs            /tmp        tmpfs     size=1024k
 LABEL=ISOIMAGE   /boot       auto      ro
