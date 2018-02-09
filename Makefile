@@ -20,7 +20,7 @@ BUSYBOX_VERSION = 1.28.0-uclibc
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
-KERNFW_URL=http://github.com/RPi-Distro/firmware-nonfree/archive/master/brcm80211/brcm.tar.gz
+KERNFW_URL=http://github.com/RPi-Distro/firmware-nonfree/archive/master.tar.gz
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -227,16 +227,16 @@ PHONY += bootfw_clean
 bootfw_clean:
 	rm -rf $(BOOTFWDIR)
 
-KERNFW_SRC := $(KERNFWDIR)/LICENSE
+KERNFW_SRC := $(KERNFWDIR)/brcm/bcm43xx-0.fw
 kernfw_src: $(KERNFW_SRC)
 $(KERNFW_SRC):
 	@mkdir -p $(KERNFWDIR)
 	wget -qO- $(KERNFW_URL) | \
-	    tar --strip-components=2 -xz -C $(KERNFWDIR) \
-		firmware-nonfree-master/brcm80211
+	    tar --strip-components=1 -xz -C $(KERNFWDIR) \
+		firmware-nonfree-master/brcm
 
 KERNFW_INSTALL_DIR := $(OSFSDIR)/lib/firmware/brcm
-KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw-610.812
+KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw
 kernfw_install: $(KERNFW_INSTALL)
 $(KERNFW_INSTALL): $(KERNFW_SRC) # see below for additional deps
 	$(FAKEROOT) -s $(FSDIR)/fakeroot \
