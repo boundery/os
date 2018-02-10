@@ -2,9 +2,19 @@ ARG FROM_PREFIX
 
 FROM ${FROM_PREFIX}debian:stretch-slim
 
-COPY *.deb /debs/
+COPY *.deb *.pub /debs/
+
+ARG FROM_PREFIX
 
 RUN    apt-get update \
+    && if [ "$FROM_PREFIX" = arm32v7/ ]; then \
+           apt-get install -y --no-install-recommends gnupg \
+        && apt-key add /debs/*.pub \
+        && echo 'deb http://archive.raspberrypi.org/debian/ stretch main' \
+                >/etc/apt/sources.list.d/raspbian.list \
+        && apt-get update \
+        && apt-get install -y --no-install-recommends firmware-brcm80211 \
+       ;fi \
     && apt-get install -y --no-install-recommends \
            kmod \
            net-tools \
@@ -19,6 +29,9 @@ RUN    apt-get update \
            busybox-syslogd \
            lvm2 \
            /debs/*.deb \
+    && if [ "$FROM_PREFIX" = arm32v7/ ]; then \
+        apt-get remove -y --autoremove gnupg \
+       ;fi \
     && mkdir -p /var/lib/docker /etc/docker \
     && ln -s ../bin/busybox /sbin/mdev \
     && rm -rf /var/tmp && ln -s /tmp /var/tmp \

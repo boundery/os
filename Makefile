@@ -20,7 +20,6 @@ BUSYBOX_VERSION = 1.28.0-uclibc
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
-KERNFW_URL=http://github.com/RPi-Distro/firmware-nonfree/archive/master.tar.gz
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -105,7 +104,6 @@ IMAGESDIR := $(BUILDDIR)/images
 ifeq ($(ARCH), armhf)
 UBOOTDIR := $(BUILDDIR)/uboot
 BOOTFWDIR := $(BUILDDIR)/bootfw
-KERNFWDIR := $(BUILDDIR)/kernfw
 endif
 
 FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
@@ -227,29 +225,6 @@ PHONY += bootfw_clean
 bootfw_clean:
 	rm -rf $(BOOTFWDIR)
 
-KERNFW_SRC := $(KERNFWDIR)/brcm/bcm43xx-0.fw
-kernfw_src: $(KERNFW_SRC)
-$(KERNFW_SRC):
-	@mkdir -p $(KERNFWDIR)
-	wget -qO- $(KERNFW_URL) | \
-	    tar --strip-components=1 -xz -C $(KERNFWDIR) \
-		firmware-nonfree-master/brcm
-
-KERNFW_INSTALL_DIR := $(OSFSDIR)/lib/firmware/brcm
-KERNFW_INSTALL := $(KERNFW_INSTALL_DIR)/bcm43xx-0.fw
-kernfw_install: $(KERNFW_INSTALL)
-$(KERNFW_INSTALL): $(KERNFW_SRC) # see below for additional deps
-	$(FAKEROOT) -s $(FSDIR)/fakeroot \
-	    sh -ce 'mkdir -p $(KERNFW_INSTALL_DIR); \
-	            cp -rT $(KERNFWDIR)/brcm $(KERNFW_INSTALL_DIR); \
-	            find $(KERNFW_INSTALL_DIR) \
-			 -type d -exec chmod 755 {} \; -o \
-	                 -type f -exec chmod 644 {} \;'
-
-PHONY += kernfw_clean
-kernfw_clean:
-	rm -rf $(KERNFWDIR)
-
 UBOOT_ENV := $(IMGFSDIR)/uboot.env
 uboot_env: $(UBOOT_ENV)
 $(UBOOT_ENV): $(SRCDIR)/rpi/ubootenv
@@ -333,7 +308,6 @@ endif
 CONTAINERS += $(ROOTFS)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
-$(KERNFW_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
@@ -378,7 +352,7 @@ fs_clean: rootfs_clean python3_clean
 
 SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
 squashfs: $(SQUASHFS)
-$(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL) $(KERNFW_INSTALL)
+$(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL)
 	for fs in $(FSDIR)/*; do \
 	    if [ -d $$fs ]; then \
 	        mkdir -p $(IMGFSDIR)/layers/`basename $$fs` ; \
