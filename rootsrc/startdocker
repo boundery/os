@@ -15,6 +15,9 @@ if ! grep -q '^cgroup /sys/fs/cgroup tmpfs' < /proc/mounts; then
     )
 fi
 
+# docker run --privileged needs this
+echo 1 >/sys/fs/cgroup/memory/memory.use_hierarchy
+
 dockerd -p /var/run/dockerd.pid 2>&1 | logger -p daemon.info -t dockerd &
 
 while ! docker info >/dev/null 2>&1; do
@@ -30,7 +33,17 @@ if ! docker images | grep -q ^debian; then
             mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
         done
 
+        name=`basename ${i%.*}`
+
+        echo Creating docker image $name
         unsplit-tar ${i%.*} /boot/layers | docker load
+
+        # if container name has a prefix, tag it with the plain name
+        prefname="$(docker images --format "{{.Repository}}" "*/$name")"
+        # there should only be one, if any
+        if [ $prefname ]; then
+            docker image tag $prefname $name
+        fi
 
         for layer in `cat $i`; do
             if [ "$i" = "/boot/layers/rootfs.layers" ]; then continue; fi

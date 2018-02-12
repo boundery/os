@@ -18,14 +18,6 @@ klogd -c5
 
 echo 5 >/proc/sys/kernel/panic
 
-mkdir -p /tmp/lvm/etc
-cp /etc/lvm/lvm.conf /tmp/lvm/etc
-mount --bind /tmp/lvm/etc /etc/lvm
-
-echo >/dev/mdev.seq
-echo /sbin/mdev >/proc/sys/kernel/hotplug
-mdev -s &
-
 modprobe brcmfmac
 (netd &)
 
@@ -33,6 +25,14 @@ mkdir -p /tmp/docker/etc
 mount -t tmpfs tmpfs /var/lib/docker
 mount --bind /tmp/docker/etc /etc/docker
 startdocker
+
+mkdir -p /tmp/lvm/etc
+cp /etc/lvm/lvm.conf /tmp/lvm/etc
+mount --bind /tmp/lvm/etc /etc/lvm
+
+echo >/dev/mdev.seq
+echo /sbin/mdev >/proc/sys/kernel/hotplug
+mdev -s &
 
 #XXX eventually this will be some form of getty
 setsid -cw bash -l

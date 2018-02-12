@@ -1,0 +1,125 @@
+#!/bin/sh -e
+
+progname="${0##*/}"
+
+cflag=
+rflag=
+tflag=
+
+main() {
+    while getopts crt opt; do
+        case $opt in
+        (c)
+            cflag=1
+            ;;
+        (r)
+            rflag=1
+            ;;
+        (t)
+            tflag=1
+            ;;
+        (\?)
+            usage
+            ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
+
+    if [ "$cflag" ]; then
+        clean "$@"
+    else
+        build "$@"
+    fi
+
+    return 0
+}
+
+usage() {
+    {
+    echo "Usage:"
+    echo "  $progname [-rt] name from-prefix src-dir"
+    echo "                    dest-dir layers-dir docker-build-proxy"
+    echo "      build container"
+    echo "          -r   rename layer from hash to container name"
+    echo "          -t   save tar fragments"
+    echo "  $progname -c name from-prefix dest-dir layers-dir"
+    echo "      clean up container"
+    } >&2
+    exit 99
+}
+
+build () {
+    if [ $# -ne 6 ]; then
+        usage
+    fi
+    name="$1"
+    from_prefix="$2"
+    srcdir="$3"
+    destdir="$4"
+    layersdir="$5"
+    docker_build_proxy="$6"
+
+    scriptdir="${0%/*}"
+    fakeroot="$scriptdir/lockedfakeroot -s $destdir/fakeroot"
+    untar="$fakeroot $scriptdir/untar-docker-image"
+    untar="$untar --savelayernames $name.layers"
+    if [ "$tflag" ]; then
+        untar="$untar --savetarfrags $name"
+    fi
+
+    if [ -f $destdir/$name.layers ]; then
+        layer=$(tail -1 $destdir/$name.layers)
+        echo "$progname: Removing old layer $layer"
+        $fakeroot rm -rf $destdir/$layer
+    fi
+
+    echo "$progname: Building container $from_prefix$name"
+    docker build $docker_build_proxy \
+           --build-arg FROM_PREFIX=$from_prefix --squash \
+           --force-rm=true -t $from_prefix$name \
+           $srcdir
+
+    echo "$progname: Extracting container $from_prefix$name"
+    mkdir -p $destdir
+    docker save $from_prefix$name | $untar $destdir
+
+    if [ "$rflag" ]; then
+        layer=$(tail -1 $destdir/$name.layers)
+        echo "$progname: Renaming layer $layer to $name"
+        mv $destdir/$layer $destdir/$name
+        sed -i "\$s/.*/$name/" $destdir/$name.layers
+    fi
+
+    echo "$progname: Copying files to $layersdir"
+    mkdir -p $layersdir
+    cp $destdir/$name.* $layersdir
+}
+
+clean() {
+    if [ $# -ne 4 ]; then
+        usage
+    fi
+    name="$1"
+    from_prefix="$2"
+    destdir="$3"
+    layersdir="$4"
+
+    scriptdir="${0%/*}"
+    fakeroot="$scriptdir/lockedfakeroot -s $destdir/fakeroot"
+
+    echo "$progname: Removing containers"
+    docker rmi $from_prefix$name >/dev/null 2>&1 || true
+    docker images -f dangling=true -q | xargs -r docker rmi
+    # remove only the top layer
+    if [ -f $destdir/$name.layers ]; then
+        layer=$(tail -1 $destdir/$name.layers)
+        echo "$progname: Removing $destdir/$layer"
+        $fakeroot rm -rf $destdir/$layer
+    fi
+    echo "$progname: Removing $destdir/$name.*"
+    rm -f $destdir/$name.*
+    echo "$progname: Removing $layersdir/$name.*"
+    rm -f $layersdir/$name.*
+}
+
+main "$@"

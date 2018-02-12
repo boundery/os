@@ -138,7 +138,7 @@ all_clean:
 	@rm -rf $(BUILDDIR)/..
 
 PHONY += clean
-clean: rootfs_clean python3_clean initrd_clean
+clean: fs_clean initrd_clean
 	rm -rf $(BUILDDIR)
 
 KERNEL_SRC := $(KERNELDIR)/Makefile
@@ -284,24 +284,16 @@ extra_debs_clean:
 ROOTFS := $(FSDIR)/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
-	@mkdir -p $(FSDIR)
-	@mkdir -p $(IMGFSDIR)/layers
-	@$(FAKEROOT) -s $(FSDIR)/fakeroot rm -rf $(OSFSDIR)
 	tar cf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
-	  docker build $(DOCKER_BUILD_PROXY) \
-	  --build-arg FROM_PREFIX=$(FROM_PREFIX) --squash \
-	  --force-rm=true -t $(FROM_PREFIX)rootfs -
-	docker save $(FROM_PREFIX)rootfs | \
-	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
-	  $(SCRIPTDIR)/untar-docker-image --savelayernames rootfs.layers $(FSDIR)
-	mv $(FSDIR)/`tail -n1 $(FSDIR)/rootfs.layers` $(OSFSDIR) #So mod/fw/etc install can find it.
-	sed -i '$$s/.*/rootfs/' $(FSDIR)/rootfs.layers
+	  $(SCRIPTDIR)/mkcontainer -r rootfs '$(FROM_PREFIX)' - \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers \
+		'$(DOCKER_BUILD_PROXY)'
 	$(FAKEROOT) -s $(FSDIR)/fakeroot \
 	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
 	@[ ! -d $(DEVELDIR)/rootfs ] || \
 	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
 	  cp -r $(DEVELDIR)/rootfs/. $(OSFSDIR)
-	cp $(FSDIR)/rootfs.layers $(IMGFSDIR)/layers/
 ifndef KEEP_CONTAINER
 	-docker rmi $(FROM_PREFIX)rootfs
 endif
@@ -311,48 +303,51 @@ $(KERNEL_MOD_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
-	docker rmi $(FROM_PREFIX)rootfs >/dev/null 2>&1 || true
-	docker images -f dangling=true -q | xargs -r docker rmi
-	[ -d $(FSDIR) ] && \
-	  cd $(FSDIR); \
-	  rm -rf `cat rootfs.layers 2>/dev/null` rootfs.layers
-	rm -f $(IMGFSDIR)/layers/rootfs.layers
+	$(SCRIPTDIR)/mkcontainer -c rootfs '$(FROM_PREFIX)' \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers
 
 PYTHON3 := $(FSDIR)/python3.off
 python3: $(PYTHON3)
 $(PYTHON3): $(CONTAINERDIR)/python3/* $(SCRIPTDIR)/untar-docker-image
-	@mkdir -p $(FSDIR)
-	@mkdir -p $(IMGFSDIR)/layers
-	docker build $(DOCKER_BUILD_PROXY) \
-	  --build-arg FROM_PREFIX=$(FROM_PREFIX) --squash \
-	  --force-rm=true -t $(FROM_PREFIX)python3 \
-	  $(CONTAINERDIR)/python3
-	docker save $(FROM_PREFIX)python3 | \
-	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
-	  $(SCRIPTDIR)/untar-docker-image --savelayernames python3.layers \
-	  --savetarfrags python3 $(FSDIR)
-	cp $(FSDIR)/python3.* $(IMGFSDIR)/layers
-ifndef KEEP_CONTAINER
-	-docker rmi $(FROM_PREFIX)python3
-endif
+	$(SCRIPTDIR)/mkcontainer -t python3 '$(FROM_PREFIX)' \
+		$(CONTAINERDIR)/python3 \
+		$(FSDIR)\
+		$(IMGFSDIR)/layers \
+		'$(DOCKER_BUILD_PROXY)'
 CONTAINERS += $(PYTHON3)
 
 PHONY += python3_clean
 python3_clean:
-	docker rmi $(FROM_PREFIX)python3 >/dev/null 2>&1 || true
-	docker images -f dangling=true -q | xargs -r docker rmi
-	[ -d $(FSDIR) ] && \
-	  cd $(FSDIR); \
-	  rm -rf `cat python3.layers 2>/dev/null` python3.*
-	rm -f $(IMGFSDIR)/layers/python3.*
+	$(SCRIPTDIR)/mkcontainer -c python3 '$(FROM_PREFIX)' \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers
+
+STORAGEMGR := $(FSDIR)/storagemgr.off
+storagemgr: $(STORAGEMGR)
+$(STORAGEMGR): $(PYTHON3) $(CONTAINERDIR)/storagemgr/* \
+               $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t storagemgr '$(FROM_PREFIX)' \
+		$(CONTAINERDIR)/storagemgr \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers \
+		'$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(STORAGEMGR)
+
+PHONY += storagemgr_clean
+storagemgr_clean:
+	$(SCRIPTDIR)/mkcontainer -c storagemgr '$(FROM_PREFIX)' \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers
 
 PHONY += fs_clean
-fs_clean: rootfs_clean python3_clean
+fs_clean: rootfs_clean python3_clean storagemgr_clean
 	rm -rf $(FSDIR)
 
 SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
 squashfs: $(SQUASHFS)
 $(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL)
+	@rm -rf $(IMGFSDIR)/layers/*/ $(IMGFSDIR)/layers/*.sqfs
 	for fs in $(FSDIR)/*; do \
 	    if [ -d $$fs ]; then \
 	        mkdir -p $(IMGFSDIR)/layers/`basename $$fs` ; \

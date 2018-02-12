@@ -1,0 +1,19 @@
+#!/bin/sh
+
+dockerargs=""
+cmd=storagemgr
+if [ "$1" = -s ]; then
+    dockerargs="$dockerargs -it"
+    cmd=bash
+    shift
+fi
+
+exec docker run --rm --privileged \
+    --mount=type=bind,src=/.bashrc,dst=/root/.bashrc \
+    --mount=type=bind,src=/dev/log,dst=/dev/log \
+    --mount=type=bind,src=/dev/mapper,dst=/dev/mapper \
+    --mount=type=bind,src=/mnt,dst=/mnt,bind-propagation=shared \
+    -e ACTION="$ACTION" \
+    -e SUBSYSTEM="$SUBSYSTEM" \
+    -e MDEV="$MDEV" \
+    $dockerargs storagemgr $cmd "$@"
