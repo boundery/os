@@ -399,7 +399,7 @@ rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_DEPS) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
-	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 128 $(IMGFSDIR)/*
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:
