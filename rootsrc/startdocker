@@ -41,8 +41,8 @@ if ! docker images | grep -q ^debian; then
         # if container name has a prefix, tag it with the plain name
         prefname="$(docker images --format "{{.Repository}}" "*/$name")"
         # there should only be one, if any
-        if [ $prefname ]; then
-            docker image tag $prefname $name
+        if [ -n "$prefname" ]; then
+            docker image tag "$prefname" $name
         fi
 
         for layer in `cat $i`; do

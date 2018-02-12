@@ -61,8 +61,7 @@ build () {
 
     scriptdir="${0%/*}"
     fakeroot="$scriptdir/lockedfakeroot -s $destdir/fakeroot"
-    untar="$fakeroot $scriptdir/untar-docker-image"
-    untar="$untar --savelayernames $name.layers"
+    untar="$scriptdir/untar-docker-image --savelayernames $name.layers"
     if [ "$tflag" ]; then
         untar="$untar --savetarfrags $name"
     fi
@@ -81,7 +80,7 @@ build () {
 
     echo "$progname: Extracting container $from_prefix$name"
     mkdir -p $destdir
-    docker save $from_prefix$name | $untar $destdir
+    docker save $from_prefix$name | $fakeroot $untar $destdir
 
     if [ "$rflag" ]; then
         layer=$(tail -1 $destdir/$name.layers)
