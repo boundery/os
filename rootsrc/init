@@ -23,9 +23,10 @@ modprobe brcmfmac
 
 #Start docker daemon
 mkdir -p /tmp/docker/etc
-mount -t tmpfs tmpfs /var/lib/docker
 mount --bind /tmp/docker/etc /etc/docker
+mount -osize=256M /var/lib/docker
 startdocker
+mount -oremount /var/lib/docker
 
 #Bring up mdev to run storage manager
 mkdir -p /tmp/lvm/etc
