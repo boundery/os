@@ -24,6 +24,10 @@ while ! docker info >/dev/null 2>&1; do
     sleep 0.5
 done
 
+# If we don't have a network, we won't have resolv.conf, and docker won't start
+# containers.
+touch /etc/resolv.conf
+
 if ! docker images | grep -q ^debian; then
     for i in /boot/layers/*.layers; do
         if [ "$i" = "/boot/layers/rootfs.layers" ]; then continue; fi
