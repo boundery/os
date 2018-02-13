@@ -54,9 +54,9 @@ if not netid: #Create the network
                            'v6AssignMode': {'rfc4193': False, 'zt': False, '6plane': True},
                            'v4AssignMode': {'zt': True},
                            'tags': [], 'private': True,
-                           'ipAssignmentPools': [{'ipRangeEnd': '172.16.31.254', 'ipRangeStart': '172.16.28.1'}],
+                           'ipAssignmentPools': [{'ipRangeEnd': '172.18.3.254', 'ipRangeStart': '172.18.0.1'}],
                            'enableBroadcast': True,
-                           'routes': [{'via': None, 'target': '172.16.28.0/22'}]
+                           'routes': [{'via': None, 'target': '172.18.0.0/22'}]
                          }
              }
     net = zt_post("network", newnet)
@@ -96,7 +96,7 @@ if member["config"]["authorized"] != True:
     newmember["config"]["activeBridge"] = True
     newmember["name"] = "services"
     #ZT Central autosetting the IPv4 addr is busted, so set it here.
-    newmember["config"]["ipAssignments"] = [ "172.16.28.1" ]
+    newmember["config"]["ipAssignments"] = [ "172.18.0.1" ]
     zt_post("network/%s/member/%s" % (netid, hostid),
             newmember)
 
