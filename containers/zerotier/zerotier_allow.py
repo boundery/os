@@ -50,7 +50,7 @@ for net in networks:
 if not netid: #Create the network
     print("Network %s doesn't exist, creating." % netname)
     newnet = { 'description': 'Private network for internal services',
-               'config': { 'name': netname, 'multicastLimit': 0, 'mtu': 2800,
+               'config': { 'name': netname, 'multicastLimit': 16, 'mtu': 2800,
                            'v6AssignMode': {'rfc4193': False, 'zt': False, '6plane': True},
                            'v4AssignMode': {'zt': True},
                            'tags': [], 'private': True,
