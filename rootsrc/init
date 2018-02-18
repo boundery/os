@@ -51,8 +51,8 @@ fi
 #XXX eventually this will be some form of getty
 setsid -cw bash -l
 
-kill `cat /var/run/dockerd.pid`
 smdocker -v -u
+kill `cat /var/run/dockerd.pid`
 netd -k
 umount -a
 sync
