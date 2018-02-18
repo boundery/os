@@ -52,7 +52,7 @@ fi
 setsid -cw bash -l
 
 kill `cat /var/run/dockerd.pid`
-storagemgr -u -v
+smdocker -v -u
 netd -k
 umount -a
 sync

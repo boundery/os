@@ -1,355 +1,380 @@
-#!/bin/sh
+#!/usr/bin/python3
 
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+import argparse
+import os
+import re
+import subprocess
+import syslog
+import time
+import traceback
 
+opts = None
+log = None
 
-#
-# Global variables
-#
-# No, most of them don't have to be declared.
-# It's just nice to have a list here.
-#
+def main():
+    parse_args()
 
-progname="${0##*/}"
-dflag=
-nflag=
-pflag=
-qflag=
-uflag=
-vflag=
+    global log
+    log = Log()
 
-
-#
-# Main
-#
-
-main() {
-    parseargs "$@" || return 99
-
-    if [ $uflag ]; then
-        local dflag=1
-        unmountall
+    if opts.unmountall:
+        unmountall()
         return 0
-    fi
 
-    if [ $pflag ]; then
-        local dflag=1
-        provision "$pflag" 4000
-        return $?
-    fi
-
-    if [ "$SUBSYSTEM" != block ]; then
+    if opts.add:
+        add(opts.add[0])
         return 0
-    fi
 
-    case "$ACTION" in
-    (add)
-        add "$MDEV"
-        return $?
-        ;;
-    (remove)
-        remove "$MDEV"
-        return $?
-        ;;
-    esac
+    if opts.provision:
+        provision(opts.provision[0], opts.size[0])
+        return 0
+
+    if opts.remove:
+        remove(opts.remove[0])
+        return 0
 
     return 0
-}
 
-parseargs() {
-    while getopts dnp:quv opt; do
-        case $opt in
-        (d)
-            dflag=1
-            ;;
-        (n)
-            nflag=1
-            ;;
-        (p)
-            pflag="$OPTARG"
-            ;;
-        (q)
-            qflag=1
-            ;;
-        (u)
-            uflag=1
-            ;;
-        (v)
-            vflag=1
-            ;;
-        (\?)
-            usage
-            return 1
-            ;;
-        esac
-    done
-    shift $(($OPTIND - 1))
-    # just ignore the rest of argv
+def parse_args(args = None):
+    a = argparse.ArgumentParser()
+    a.add_argument("-a", "--add", nargs = 1, metavar = "dev",
+                   action = "store",
+                   help = "add device")
+    a.add_argument("-p", "--provision", nargs = 1, metavar = "dev",
+                   action = "store",
+                   help = "provision device")
+    a.add_argument("-s", "--size", nargs = 1, metavar = "size",
+                   action = "store", type = int, default = [4000],
+                   help = "initial size to provision")
+    a.add_argument("-r", "--remove", nargs = 1, metavar = "dev",
+                   action = "store",
+                   help = "remove device")
+    a.add_argument("-u", "--unmountall",
+                   action = "store_true",
+                   help = "unmount everything")
+    a.add_argument("-d", "--daemon",
+                   action = "store_true",
+                   help = "daemon mode, log to syslog")
+    a.add_argument("-n", "--dryrun",
+                   action = "store_true",
+                   help = "dry run, don't actually do anything")
+    a.add_argument("-v", "--verbose",
+                   action = "store_true",
+                   help = "verbose, log more")
 
-    return 0
-}
+    global opts
+    opts = a.parse_args(args)
 
-usage() {
-    {
-    echo "Usage: $progname [-dknpqv]"
-    echo "    -d        debug, log to stdout, log more"
-    echo "    -n        dry run, don't execute any action"
-    echo "    -p dev    provision new device"
-    echo "    -q        quiet, log less"
-    echo "    -u        unmount everything"
-    echo "    -v        verbose, log more"
-    } >&2
-}
+    if not opts.add and not opts.provision and not opts.remove and \
+       not opts.unmountall:
+        if os.getenv("SUBSYSTEM") == "block":
+            dev = os.getenv("MDEV")
+            if dev is not None:
+                action = os.getenv("ACTION")
+                if action == "add":
+                    opts.add = [dev]
+                elif action == "remove":
+                    opts.remove = [dev]
 
-unmountall() {
-    local mnt="/mnt"
-    local devs="$(listdir "$mnt" "sd[a-z]*")"
+    if not opts.add and not opts.provision and not opts.remove and \
+       not opts.unmountall:
+        a.print_help()
 
-    if [ -d "$mnt/vg00-lv00" ]; then
-        run umount "$mnt/vg00-lv00"
-        run rmdir "$mnt/vg00-lv00"
-    fi
-    run lvchange -an vg00/lv00
-    local dev
-    for dev in $devs; do
-        remove $dev
-    done
-}
+def unmountall():
+    mnt = "/mnt"
+    vmnt = mnt + "/vg00-lv00"
+    if os.path.isdir(vmnt):
+        run(["umount", vmnt])
+        os.rmdir(vmnt)
+    run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
+    for dev in listdir(mnt, "sd[a-z][0-9]+"):
+        remove(dev)
 
-provision() {
-    local dev="/dev/$1"
-    local size="$2"
-    local mnt="/mnt/$1"
-    local dir="$mnt/prjx/storage"
-    local file="$dir/pv0000"
+def provision(dev, size):
+    mnt = "/mnt/" + dev
+    dir = mnt + "/prjx/storage/"
+    file = dir + "pv0000"
+    tmpfile = dir + "tmp0000"
 
-    if ! [ "$size" -ge 16 -a "$size" -le 4000 ] 2>/dev/null; then
-        error "\"$size\" must be a number between 16 and 4000"
-    fi
+    if size < 1 and size > 4000:
+        log.error("size %s must be between 1 and 4000MB" % (size))
 
-    # XXX check $dev and $mnt mount status
-    run mkdir -p "$mnt"
-    run mount "$dev" "$mnt"
-    if [ $? -ne 0 ]; then
-        run umount "$mnt"
-        error "failed to mount $dev on $mnt"
-        return 1
-    fi
-    if [ -d "$dir" ]; then
-        run umount "$mnt"
-        error "device $dev is already provisioned"
-        return 1
-    fi
-
-    info "creating partition file $file size ${size}M"
-    run mkdir -p "$dir"
-    local verbose=
-    if [ $dflag ]; then
-        verbose=status=progress
-    fi
-    run dd if=/dev/zero of="$file" bs=1M count=$size $verbose
-
-    info "creating physical partition"
-    local loopdev=`losetup -f --show "$file"`
-    if [ $? -ne 0 ]; then
-        error "failed to create loopback device for $file"
-        return 1
-    fi
-    run pvcreate "$loopdev"
-    if [ $? -ne 0 ]; then
-        error "failed to create physical volume for $file on $loopdev"
-        run losetup -d "$loopdev"
-        return 1
-    fi
-
-    info "creating volume group"
-    run vgcreate vg00 "$loopdev"
-    if [ $? -ne 0 ]; then
-        error "failed to create volume group"
-        run losetup -d "$loopdev"
-        return 1
-    fi
-
-    info "creating logical volume"
-    run lvcreate -an -nlv00 -l100%FREE vg00
-    if [ $? -ne 0 ]; then
-        error "failed to create logical volume"
-        run losetup -d "$loopdev"
-        return 1
-    fi
-
-    info "activating logical valume"
-    run lvchange -ay --activationmode complete vg00/lv00
-    if [ $? -ne 0 ]; then
-        error "failed to activate logical volume"
-        return 1
-    fi
-    local vdev="/dev/vg00/lv00"
-    waitlv "$vdev"
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-
-    info "creating filesystem"
-    run mkfs -text4 "$vdev"
-
-    info "cleaning up"
-    run lvchange -an vg00/lv00
-    run losetup -d "$loopdev"
-    run umount "$mnt"
-
-    info "attempting to mount new logical volume"
-    add "$1"
-}
-
-add() {
-    local dev="/dev/$1"
-    local mnt="/mnt/$1"
-    local dir="$mnt/prjx/storage"
-
-    debug "adding $dev"
-
-    # XXX check $dev and $mnt mount status
-    run mkdir -p "$mnt"
-    run mount "$dev" "$mnt"
-    if [ $? -ne 0 ]; then
-        run umount "$mnt"
-        error "failed to mount $dev on $mnt"
-        return 1
-    fi
-    if [ ! -d "$dir" ]; then
-        run umount "$mnt"
-        error "device $dev has not been provisioned"
-        return 1
-    fi
-    local pvs="$(listdir "$dir" "pv[0-9][0-9][0-9][0-9]")"
-    if [ "$pvs" = "" ]; then
-        run umount "$mnt"
-        error "device $dev doesn't have any partition files"
-        return 1
-    fi
-    local pv
-    for pv in $pvs; do
-        local f="$dir/$pv"
-        debug "adding physical partition $f"
-        run losetup -f "$f"
-    done
-
-    run lvchange -ay --activationmode complete vg00/lv00
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-
-    local vdev="/dev/mapper/vg00-lv00"
-    local vdir="/mnt/vg00-lv00"
-    waitlv "$vdev"
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-    run mkdir -p "$vdir"
-    run mount "$vdev" "$vdir"
-    if [ $? -ne 0 ]; then
-        error "failed to mount logical volume $vdev on $vdir"
-        run rmdir "$vdir"
-        return 1
-    fi
-    info "logical volume $vdev mounted on $vdir"
-    return 0
-}
-
-waitlv() {
-    local vdev="$1"
-
-    n=10
-    while [ ! -e "$vdev" ]; do
-        if [ $n -lt 10 -a $(($n % 2)) -eq 0 ]; then
-            info "waiting for logical volume $vdev...$(($n / 2))"
-        fi
-        n=$(($n - 1))
-        if [ $n -lt 0 ]; then
-            error "timed out waiting for logical volume $vdev"
-            return 1
-        fi
-        sleep 0.5
-    done
-    return 0
-}
-
-remove() {
-    local dev="/dev/$1"
-    local mnt="/mnt/$1"
-    local dir="$mnt/prjx/storage"
-
-    local pv
-    for pv in $(listdir "$dir" "pv[0-9][0-9][0-9][0-9]"); do
-        local loopdevs=$(losetup -j "$dir/$pv" | sed 's,^\(/dev/loop[1-9][0-9]*\):.*,\1,')
-        local loopdev
-        for loopdev in $loopdevs; do
-            run losetup -d $loopdev
-        done
-    done
-
-    sleep 1     # XXX
-    run umount "$dev"
-    run rmdir "$mnt"
-}
-
-listdir() {
-    local dir="$1"
-    local pat="$2"
-
-    (cd "$dir" && ls -d $pat) 2>/dev/null
-}
-
-
-#
-# Logging and debugging
-#
-
-log() {
-    local prio="$1"
-    shift
-
-    if [ "$dflag" ]; then
-        echo "$*"
+    try:
+        if not check_partition(dev):
+            log.error("can't provision %s" % (dev))
+            return
+    except Exception:
         return
-    fi
-    logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
-}
 
-error() {
-    log err "$@"
-}
+    run(["mkdir", "-p", mnt])
+    try:
+        run(["mount", "/dev/" + dev, mnt])
+    except Exception:
+        log.error("failed to mount %s on %s" % (dev, mnt))
+        return
+    if os.path.isfile(file):
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.error("device %s is already provisioned" % (dev))
+        return
 
-warning() {
-    log warning "$@"
-}
+    # write in 8MB units
+    bs = 8
+    blocks = int((size + (bs - 1)) / bs)
+    buf = [bytes(256 * 1024)] * (4 * bs)
+    fd = None
+    try:
+        log.info("creating partition file %s size %dMB" % (file, blocks * bs))
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | \
+                os.O_DSYNC | os.O_DIRECT
+        # the 0600 doesn't really do anything on fatfs
+        fd = os.open(tmpfile, flags, 0o600)
+        log.verbose("writing %d %dMB block(s)" % (blocks, bs))
+        for i in range(blocks):
+            log.verbose("  %d" % (i))
+            os.writev(fd, buf)
+    except Exception as e:
+        if fd is not None:
+            os.ftruncate(fd, 0)
+        os.unlink(tmpfile)
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.error("failed to create %dMB file %s" % (blocks * bs, tmpfile))
+    finally:
+        if fd is not None:
+            os.close(fd)
+        del buf
 
-info() {
-    [ "$qflag" ] || log info "$@"
-}
+    log.info("creating physical partition")
+    try:
+        loopdev = run(["losetup", "-f", "--show", tmpfile]).strip("\n")
+    except Exception:
+        os.unlink(tmpfile)
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.error("failed to create loopback device for file %s" % (tmpfile))
+        return
 
-debug() {
-    [ "$dflag" ] && log debug "$@"
-}
+    vdev = "/dev/mapper/vg00-lv00"
+    try:
+        run(["pvcreate", loopdev])
+        log.info("creating volume group")
+        run(["vgcreate", "vg00", loopdev])
+        log.info("creating logical volume")
+        run(["lvcreate", "-an", "-nlv00", "-l100%FREE", "vg00"])
+        run(["lvchange", "-ay", "--activationmode", "complete", "vg00/lv00"])
+        waitlv(vdev)
+    except Exception:
+        run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
+        run(["lvremove", "-y", "vg00/lv00"], ignoreerr = True)
+        run(["losetup", "-d", loopdev])
+        os.unlink(tmpfile)
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.error("failed to create physical partition, volume group, " +
+                  "or logical volume")
+        return
 
-verbose() {
-    [ "$vflag" ] && log info "$@"
-}
+    vdev = "/dev/mapper/vg00-lv00"
+    vdir = "/mnt/vg00-lv00"
+    try:
+        log.info("creating file system")
+        run(["mkfs", "-text4", vdev])
+        mountlv1(vdev, vdir)
+        os.rename(tmpfile, file)
+    except Exception:
+        run(["lvchange", "-an", "vg00/lv00"])
+        run(["losetup", "-d", loopdev])
+        os.unlink(tmpfile)
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.error("failed to create or mount filesystem")
+        return
 
-run() {
-    verbose "$*"
-    if [ "$dflag" ]; then
-        "$@"
-    else
-        "$@" 2>/dev/null
-    fi
-}
+def add(dev):
+    mnt = "/mnt/" + dev
+    dir = mnt + "/prjx/storage/"
 
+    try:
+        if not check_partition(dev):
+            log.info("ignoring %s" % (dev))
+            return
+    except Exception:
+        return
 
-#
-# Run
-#
+    log.verbose("adding %s" % (dev))
 
-main "$@"
-exit $?
+    # XXX check dev and mnt mount status
+    run(["mkdir", "-p", mnt])
+    try:
+        run(["mount", "/dev/" + dev, mnt])
+    except Exception:
+        os.rmdir(mnt)
+        log.error("failed to mount %s on %s" % (dev, mnt))
+        return
+    if not os.path.isdir(dir):
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.warning("device %s has not been provisioned" % (dev))
+        return
+
+    pvs = listdir(dir, "pv[0-9]{4}")
+    if len(pvs) == 0:
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.warning("device %s doesn't have any partition files" % (dev))
+        return
+
+    try:
+        loopdevs = []
+        for pv in pvs:
+            f = dir + pv
+            log.verbose("adding physical partition %s" % (f))
+            loopdev = run(["losetup", "-f", "--show", f]).strip("\n")
+            loopdevs.append(loopdev)
+        mountlv()
+    except Exception:
+        for loopdev in loopdevs:
+            run(["losetup", "-d", loopdev])
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        return
+
+def mountlv():
+    vdev = "/dev/mapper/vg00-lv00"
+    try:
+        run(["lvchange", "-ay", "--activationmode", "complete", "vg00/lv00"])
+        waitlv(vdev)
+    except Exception:
+        log.error("failed to activate logical volume")
+        raise
+
+    vdir = "/mnt/vg00-lv00"
+    try:
+        mountlv1(vdev, vdir)
+    except Exception:
+        run(["lvchange", "-an", "vg00/lv00"])
+        raise
+
+def mountlv1(vdev, vdir):
+    run(["mkdir", "-p", vdir])
+    try:
+        run(["mount", vdev, vdir])
+    except Exception:
+        log.error("failed to mount logical volume %s on %s" % (vdev, vdir))
+        os.rmdir(vdir)
+        raise
+    log.info("logical volume %s mounted on %s" % (vdev, vdir))
+
+def waitlv(vdev, timeout = 5):
+    n = timeout * 2
+    while not os.path.exists(vdev):
+        if n <= 0:
+            log.error("timed out waiting for logical volume %s" % (vdev))
+            raise RuntimeError()
+        # print only every second and don't print the first one
+        if n < timeout * 2 and n % 2 == 0:
+            log.info("waiting for logical volume %s...%d" % (vdev, n / 2))
+        n -= 1
+        time.sleep(0.5)
+
+def remove(dev):
+    mnt = "/mnt/" + dev
+    dir = mnt + "/prjx/storage/"
+
+    try:
+        for pv in listdir(dir, "pv[0-9]{4}"):
+            loopdev = run_re(["losetup", "-j", dir + pv],
+                             "^(/dev/loop[1-9]+):")
+            if loopdev is not None:
+                run(["losetup", "-d", loopdev])
+    except Exception:
+        log.error("failed remove a physical partition loopback device")
+        return
+
+    time.sleep(1) # XXX
+    run(["umount", mnt])
+    os.rmdir(mnt)
+
+def check_partition(dev):
+    m = re.fullmatch("(sd[a-z])[0-9]+", dev)
+    if not m:
+        # better partition check
+        log.error("%s is not a storage partition" % (dev))
+        raise RuntimeError()
+    bdev = m.group(1)
+    mounted = run_re(["mount"], "^(/dev/(?:%s|%s)) on " % (bdev, dev))
+    if mounted is not None:
+        log.info("%s is already mounted" % (mounted))
+        return False
+    return True
+
+def listdir(dir, pattern = None):
+    res = []
+    for f in os.scandir(dir):
+        if pattern is None or re.fullmatch(pattern, f.name):
+            res.append(f.name)
+    res.sort()
+    return res
+
+def run(cmd, stdin = subprocess.DEVNULL, ignoreerr = False,
+        alwaysrun = False, quiet = False):
+    if not quiet:
+        log.verbose("%s" % (" ".join(cmd)))
+    if not alwaysrun and opts.dryrun:
+        return ""
+    s = None
+    try:
+        s = subprocess.run(cmd, stdin = stdin,
+                           stdout = subprocess.PIPE,
+                           stderr = subprocess.STDOUT)
+        if type(s.stdout) is bytes:
+            s.stdout = s.stdout.decode("ASCII")
+        s.check_returncode()
+    except Exception as e:
+        if not ignoreerr:
+            if s is None:
+                log.error("error from \"%s\": %s" % (" ".join(cmd), e))
+            else:
+                log.error("error from \"%s\": %s:%s" %
+                          (" ".join(cmd), e, s.stdout))
+            raise e
+    return s.stdout
+
+def run_re(cmd, pattern):
+    s = run(cmd, alwaysrun = True, quiet = True)
+    m = re.search(pattern, s, re.MULTILINE)
+    if not m:
+        return None
+    return m.group(1)
+
+class Log(object):
+    def __init__(self):
+        syslog.openlog("storagemgr", 0, syslog.LOG_DAEMON)
+    def _log(self, priority, msg):
+        for line in msg.split("\n"):
+            if line == "":
+                continue
+            if opts.daemon:
+                syslog.syslog(priority, line)
+            else:
+                print(line)
+    def info(self, msg):
+        self._log(syslog.LOG_INFO, msg)
+    def warning(self, msg):
+        self._log(syslog.LOG_WARNING, msg)
+    def error(self, msg):
+        self._log(syslog.LOG_ERR, msg)
+    def verbose(self, msg):
+        if not opts.verbose:
+            return
+        self._log(syslog.LOG_INFO, msg)
+
+if __name__ == "__main__":
+    try:
+        exit(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        log.error(traceback.format_exc())
+    exit(1)

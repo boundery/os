@@ -27,13 +27,11 @@ main() {
     parseargs "$@" || return 99
 
     if [ $uflag ]; then
-        local dflag=1
         unmountall
         return 0
     fi
 
     if [ $pflag ]; then
-        local dflag=1
         provision "$pflag" 4000
         return $?
     fi
@@ -92,7 +90,7 @@ parseargs() {
 usage() {
     {
     echo "Usage: $progname [-dknpqv]"
-    echo "    -d        debug, log to stdout, log more"
+    echo "    -d        daemon mode, log to syslog"
     echo "    -n        dry run, don't execute any action"
     echo "    -p dev    provision new device"
     echo "    -q        quiet, log less"
@@ -144,7 +142,7 @@ provision() {
     info "creating partition file $file size ${size}M"
     run mkdir -p "$dir"
     local verbose=
-    if [ $dflag ]; then
+    if [ $vflag ]; then
         verbose=status=progress
     fi
     run dd if=/dev/zero of="$file" bs=1M count=$size $verbose
@@ -207,7 +205,7 @@ add() {
     local mnt="/mnt/$1"
     local dir="$mnt/prjx/storage"
 
-    debug "adding $dev"
+    verbose "adding $dev"
 
     # XXX check $dev and $mnt mount status
     run mkdir -p "$mnt"
@@ -231,7 +229,7 @@ add() {
     local pv
     for pv in $pvs; do
         local f="$dir/$pv"
-        debug "adding physical partition $f"
+        verbose "adding physical partition $f"
         run losetup -f "$f"
     done
 
@@ -310,7 +308,7 @@ log() {
     local prio="$1"
     shift
 
-    if [ "$dflag" ]; then
+    if ! [ "$dflag" ]; then
         echo "$*"
         return
     fi
@@ -329,10 +327,6 @@ info() {
     [ "$qflag" ] || log info "$@"
 }
 
-debug() {
-    [ "$dflag" ] && log debug "$@"
-}
-
 verbose() {
     [ "$vflag" ] && log info "$@"
 }
@@ -340,9 +334,9 @@ verbose() {
 run() {
     verbose "$*"
     if [ "$dflag" ]; then
-        "$@"
-    else
         "$@" 2>/dev/null
+    else
+        "$@"
     fi
 }
 
