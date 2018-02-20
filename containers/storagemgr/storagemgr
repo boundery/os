@@ -124,6 +124,7 @@ def provision(dev, size):
     buf = [bytes(256 * 1024)] * (4 * bs)
     fd = None
     try:
+        run(["mkdir", "-p", dir])
         log.info("creating partition file %s size %dMB" % (file, blocks * bs))
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | \
                 os.O_DSYNC | os.O_DIRECT
