@@ -1,0 +1,65 @@
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index f321b96..255d081 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -457,7 +457,7 @@ static void lo_complete_rq(struct request *rq)
+ 		zero_fill_bio(bio);
+ 	}
+ 
+-	blk_mq_end_request(rq, cmd->ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
++	blk_mq_end_request(rq, cmd->ret == -EOPNOTSUPP ? BLK_STS_NOTSUPP : cmd->ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
+ }
+ 
+ static void lo_rw_aio_complete(struct kiocb *iocb, long ret, long ret2)
+@@ -1695,7 +1695,7 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
+  failed:
+ 	/* complete non-aio request */
+ 	if (!cmd->use_aio || ret) {
+-		cmd->ret = ret ? -EIO : 0;
++		cmd->ret = ret == -EOPNOTSUPP ? ret : ret ? -EIO : 0;
+ 		blk_mq_complete_request(cmd->rq);
+ 	}
+ }
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 035cd3f..87c91f7 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -45,6 +45,15 @@ int ext4_resize_begin(struct super_block *sb)
+ 		return -EPERM;
+ 	}
+ 
++	if (sb->s_blocksize_bits != sb->s_bdev->bd_inode->i_blkbits) {
++		ext4_warning(sb, "resize not supported because "
++				 "fs block size (%d) doesn't match "
++				 "device block size (%d)",
++			     1 << sb->s_blocksize_bits,
++			     1 << sb->s_bdev->bd_inode->i_blkbits);
++		return -EOPNOTSUPP;
++	}
++
+ 	if (test_and_set_bit_lock(EXT4_FLAGS_RESIZING,
+ 				  &EXT4_SB(sb)->s_ext4_flags))
+ 		ret = -EBUSY;
+@@ -2015,6 +2024,8 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
+ 		free_flex_gd(flex_gd);
+ 	if (resize_inode != NULL)
+ 		iput(resize_inode);
+-	ext4_msg(sb, KERN_INFO, "resized filesystem to %llu", n_blocks_count);
++	if (!err)
++		ext4_msg(sb, KERN_INFO, "resized filesystem to %llu",
++			 n_blocks_count);
+ 	return err;
+ }
+diff --git a/fs/fat/file.c b/fs/fat/file.c
+index 4724cc9..126cc3c 100644
+--- a/fs/fat/file.c
++++ b/fs/fat/file.c
+@@ -181,7 +181,7 @@ const struct file_operations fat_file_operations = {
+ #endif
+ 	.fsync		= fat_file_fsync,
+ 	.splice_read	= generic_file_splice_read,
+-	.fallocate	= fat_fallocate,
++	//.fallocate	= fat_fallocate,
+ };
+ 
+ static int fat_cont_expand(struct inode *inode, loff_t size)
