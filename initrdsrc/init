@@ -9,21 +9,27 @@ sleep 2
 mount /proc
 mount /dev
 mount /boot
-# XXX debugging: break into a shell
-#sh
 
 # Switch to the real root.
-for i in `cat /boot/layers/rootfs.layers`; do
-    mount -tsquashfs /boot/layers/$i.sqfs /boot/layers/$i
-    LAYERS=/boot/layers/$i:$LAYERS
-done
-# XXX debugging: add python layer
-#for i in `fgrep -vf/boot/layers/rootfs.layers /boot/layers/python3.layers`; do
-#    mount -tsquashfs /boot/layers/$i.sqfs /boot/layers/$i
-#    LAYERS=/boot/layers/$i:$LAYERS
-#done
-LAYERS=${LAYERS%:}
-mount -toverlay overlay -olowerdir=$LAYERS /newroot
+
+LAYERS=
+FILTERS="-f/dev/null"
+mount_layers() {
+    name=$1
+    dir=/boot/layers
+    for i in `fgrep -v $FILTERS $dir/$name.layers`; do
+        mount -tsquashfs $dir/$i.sqfs $dir/$i
+        LAYERS=$dir/$i:$LAYERS
+    done
+    FILTERS="$FILTERS -f$dir/$name.layers"
+}
+
+mount_layers rootfs
+# XXX debugging: add more layers
+#mount_layers python3
+#mount_layers storagemgr
+mount -toverlay overlay -olowerdir=${LAYERS%:} /newroot
+
 # XXX debugging: mount a writable overlay on top of /
 #mount -ttmpfs tmpfs -osize=128M /boot/overlay
 #mkdir /boot/overlay/root
@@ -33,9 +39,12 @@ mount -toverlay overlay -olowerdir=$LAYERS /newroot
 #      -oupperdir=/boot/overlay/root \
 #      -oworkdir=/boot/overlay/work \
 #      /newroot
+
+# Move existing mounts to the new root.
 mount --move /proc /newroot/proc
 mount --move /dev /newroot/dev
 mount --move /boot /newroot/boot
 # XXX debugging: leave old root visible under the new root
 #mount --bind / /newroot/mnt
+
 exec switch_root /newroot /sbin/init
