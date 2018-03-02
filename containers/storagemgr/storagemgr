@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import errno
 import re
 import subprocess
 import syslog
@@ -17,21 +18,21 @@ def main():
     global log
     log = Log()
 
-    if opts.unmountall:
-        unmountall()
-        return 0
-
     if opts.add:
-        add(opts.add[0])
-        return 0
-
-    if opts.provision:
-        provision(opts.provision[0], opts.size[0])
-        return 0
+        return add(opts.add[0])
 
     if opts.remove:
-        remove(opts.remove[0])
-        return 0
+        return remove(opts.remove[0])
+
+    if opts.provision:
+        return provision(opts.provision[0], opts.size[0])
+
+    if opts.grow:
+        return grow(opts.grow[0], opts.size[0], opts.nfiles[0],
+                    opts.minfree[0])
+
+    if opts.unmountall:
+        return unmountall()
 
     return 0
 
@@ -39,19 +40,28 @@ def parse_args(args = None):
     a = argparse.ArgumentParser()
     a.add_argument("-a", "--add", nargs = 1, metavar = "dev",
                    action = "store",
-                   help = "add device")
-    a.add_argument("-p", "--provision", nargs = 1, metavar = "dev",
-                   action = "store",
-                   help = "provision device")
-    a.add_argument("-s", "--size", nargs = 1, metavar = "size",
-                   action = "store", type = int, default = [4000],
-                   help = "initial size to provision")
+                   help = "add (already provisioned) device")
     a.add_argument("-r", "--remove", nargs = 1, metavar = "dev",
                    action = "store",
-                   help = "remove device")
+                   help = "remove (previously added) device")
     a.add_argument("-u", "--unmountall",
                    action = "store_true",
                    help = "unmount everything")
+    a.add_argument("-p", "--provision", nargs = 1, metavar = "dev",
+                   action = "store",
+                   help = "provision device")
+    a.add_argument("-g", "--grow", nargs = 1, metavar = "dev",
+                   action = "store",
+                   help = "grow (already provisioned) device")
+    a.add_argument("-s", "--size", nargs = 1,
+                   action = "store", type = int, default = [4000],
+                   help = "file size (in MiB) to create for -p and -g")
+    a.add_argument("-f", "--nfiles", nargs = 1,
+                   action = "store", type = int, default = [None],
+                   help = "number files to grow or create for -g")
+    a.add_argument("-m", "--minfree", nargs = 1,
+                   action = "store", type = int, default = [512],
+                   help = "minimum free space (in MiB) to leave for -g")
     a.add_argument("-d", "--daemon",
                    action = "store_true",
                    help = "daemon mode, log to syslog")
@@ -59,7 +69,7 @@ def parse_args(args = None):
                    action = "store_true",
                    help = "dry run, don't actually do anything")
     a.add_argument("-v", "--verbose",
-                   action = "store_true",
+                   action = "count", default = 0,
                    help = "verbose, log more")
 
     global opts
@@ -76,93 +86,83 @@ def parse_args(args = None):
                 elif action == "remove":
                     opts.remove = [dev]
 
-    if not opts.add and not opts.provision and not opts.remove and \
+    if not opts.add and not opts.grow and not opts.provision and \
+       not opts.remove and \
        not opts.unmountall:
         a.print_help()
 
 def unmountall():
     mnt = "/mnt"
     vmnt = mnt + "/vg00-lv00"
+    log.info("unmounting logical volume %s" % (vmnt))
     if os.path.isdir(vmnt):
-        run(["umount", vmnt])
+        run(["umount", vmnt], ignoreerr = True)
         os.rmdir(vmnt)
     run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
-    for dev in listdir(mnt, "sd[a-z][0-9]+"):
+    for dev in listdir(mnt, "sd[a-z]\d+"):
         remove(dev)
+    return 0
 
 def provision(dev, size):
     mnt = "/mnt/" + dev
-    dir = mnt + "/prjx/storage/"
-    file = dir + "pv0000"
-    tmpfile = dir + "tmp0000"
-
-    if size < 1 and size > 4000:
-        log.error("size %s must be between 1 and 4000MB" % (size))
+    dir = mnt + "/prjx/storage"
+    file = "%s/pv0000" % (dir)
+    tmpfile = "%s/tmp0000" % (dir)
 
     try:
-        if not check_partition(dev):
+        if not checkpartition(dev):
             log.error("can't provision %s" % (dev))
-            return
+            return 0
     except Exception:
-        return
+        return 1
 
-    run(["mkdir", "-p", mnt])
-    try:
-        run(["mount", "/dev/" + dev, mnt])
-    except Exception:
-        log.error("failed to mount %s on %s" % (dev, mnt))
-        return
+    # write in 8MB units
+    buf, bufsize, goalsize = makebuffer(size, 8)
+    if buf is None:
+        return 1
+
+    if not mountdev(dev, mnt):
+        return 1
     if os.path.isfile(file):
         run(["umount", mnt])
         os.rmdir(mnt)
         log.error("device %s is already provisioned" % (dev))
-        return
+        return 1
 
-    # write in 8MB units
-    bs = 8
-    blocks = int((size + (bs - 1)) / bs)
-    buf = [bytes(256 * 1024)] * (4 * bs)
-    fd = None
     try:
         run(["mkdir", "-p", dir])
-        log.info("creating partition file %s size %dMB" % (file, blocks * bs))
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | \
-                os.O_DSYNC | os.O_DIRECT
-        # the 0600 doesn't really do anything on fatfs
-        fd = os.open(tmpfile, flags, 0o600)
-        log.verbose("writing %d %dMB block(s)" % (blocks, bs))
-        for i in range(blocks):
-            log.verbose("  %d" % (i))
-            os.writev(fd, buf)
+        oldsize, newsize = growfile(tmpfile, goalsize, buf, bufsize, goalsize)
     except Exception as e:
-        if fd is not None:
-            os.ftruncate(fd, 0)
-        os.unlink(tmpfile)
+        log.error("failed to create %s file %s: %s" %
+                  (fmtsize(goalsize, "byte"), tmpfile, e))
+        try:
+            os.unlink(tmpfile)
+        except Exception:
+            pass
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.error("failed to create %dMB file %s" % (blocks * bs, tmpfile))
+        return 1
     finally:
-        if fd is not None:
-            os.close(fd)
         del buf
 
-    log.info("creating physical partition")
+    log.info("creating physical volume")
     try:
         loopdev = run(["losetup", "-f", "--show", tmpfile]).strip("\n")
     except Exception:
+        log.error("failed to create loopback device for file %s" % (tmpfile))
         os.unlink(tmpfile)
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.error("failed to create loopback device for file %s" % (tmpfile))
-        return
+        return 1
 
+    # XXX handle existing vg00/lv00 and just add to it, for second drive
     vdev = "/dev/mapper/vg00-lv00"
     try:
         run(["pvcreate", loopdev])
         log.info("creating volume group")
         run(["vgcreate", "vg00", loopdev])
         log.info("creating logical volume")
-        run(["lvcreate", "-an", "-nlv00", "-l100%FREE", "vg00"])
+        run(["lvcreate", "-an", "-nlv00", "-l100%vg", "vg00"])
         run(["lvchange", "-ay", "--activationmode", "complete", "vg00/lv00"])
         waitlv(vdev)
     except Exception:
@@ -172,17 +172,21 @@ def provision(dev, size):
         os.unlink(tmpfile)
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.error("failed to create physical partition, volume group, " +
+        log.error("failed to create physical volume, volume group, " +
                   "or logical volume")
-        return
+        return 1
 
     vdev = "/dev/mapper/vg00-lv00"
     vdir = "/mnt/vg00-lv00"
     try:
-        log.info("creating file system")
-        run(["mkfs", "-text4", vdev])
+        log.info("creating filesystem")
+        #
+        # Because of a kernel ext4 resize bug, the block size here
+        # must match the block size of the device.
+        # XXX we should get it from stat(vdev)
+        #
+        run(["mkfs", "-text4", "-b4096", vdev])
         mountlv1(vdev, vdir)
-        os.rename(tmpfile, file)
     except Exception:
         run(["lvchange", "-an", "vg00/lv00"])
         run(["losetup", "-d", loopdev])
@@ -190,47 +194,241 @@ def provision(dev, size):
         run(["umount", mnt])
         os.rmdir(mnt)
         log.error("failed to create or mount filesystem")
-        return
+        return 1
+
+    # commit
+    os.rename(tmpfile, file)
+
+    return 0
+
+def grow(dev, size, nfiles, minfree):
+    mnt = "/mnt/" + dev
+    dir = mnt + "/prjx/storage"
+    vdev = "/dev/mapper/vg00-lv00"
+    vdir = "/mnt/vg00-lv00"
+
+    # do everything in 8MB units
+    buf, bufsize, goalsize = makebuffer(size, 8)
+    if buf is None:
+        return 1
+    minfree *= 1048576
+
+    if run_re(["mount"], "^(/dev/%s on %s)" % (dev, mnt)) is None:
+        log.error("device %s is not already mounted on %s" % (dev, mnt))
+        return 1
+    if run_re(["mount"], "^(%s on %s)" % (vdev, vdir)) is None:
+        log.error("logical volume %s is not already mounted on %s" %
+                  (vdev, vdir))
+        return 1
+
+    # XXX listdir() is not the most efficient way to compute index
+    files = listdir(dir, "pv\d{4}")
+    if len(files) == 0:
+        # can't actually happen because vdev exists and is mounted
+        log.error("no physical volume files in %s" % (dir))
+        return 1
+    index = int(re.fullmatch("pv(\d+)", files[-1]).group(1))
+    nwritten = 0
+    nfwritten = 0
+
+    while nfiles is None or nfwritten < nfiles: #{
+        free = run_re(["df", "--output=avail", "-B1", mnt], "^\s*(\d+)")
+        if free is None:
+            log.error("failed to compute free space on %s" % (mnt))
+            return 1
+        free = int(free)
+
+        file = "%s/pv%04d" % (dir, index)
+        index += 1
+
+        oldsize, newsize = growfile(file, goalsize, buf, bufsize,
+                                    free - minfree)
+        n = newsize - oldsize
+        nwritten += n
+        free -= n
+        if newsize == 0:
+            break
+
+        # create or resize loop device
+        loopdev = run_re(["losetup", "-j", file], "^(/dev/loop\d+):")
+        if loopdev is None:
+            loopdev = run(["losetup", "-f", "--show", file]).strip("\n")
+        else:
+            # resize if needed
+            s = readfile("/sys/class/block/%s/size" % (loopdev[5:]),
+                         isint = True)
+            if s != int(newsize / 512):
+                run(["losetup", "-c", loopdev])
+
+        # resize physical volume or create and add to volume group
+        x = run_re(["pvs", "-opv_name,vg_name", loopdev],
+                   "%s\s+(\S+)" % loopdev, ignoreerr = True)
+        if x == "vg00":
+            # file already a physical volume in the volume group
+            # XXX can't get exact pv size to compare to file size
+            log.info("resizing existing physical volume")
+            run(["pvresize", loopdev])
+        else:
+            # file not a physical volume or is a pv but not in the group
+            if x is None:
+                log.info("creating physical volume")
+                run(["pvcreate", loopdev])
+            log.info("adding physical volume to volume group")
+            run(["vgextend", "vg00", loopdev])
+
+        if newsize != oldsize:
+            nfwritten += 1
+
+        if bufsize > free - minfree:
+            break
+    #}
+
+    if nwritten == 0:
+        log.info("no bytes written")
+    else:
+        log.info("%s written in %s" %
+                 (fmtsize(nwritten, "byte"), fmtsize(nfwritten, "file")))
+    log.info("%s left on %s, %s reserved" %
+             (fmtsize(free, "byte"), dev, fmtsize(minfree)))
+
+    gvfree = run_re(["vgs", "-ovg_name,vg_free", "vg00"], "vg00\s+(\d+)")
+    if gvfree != "0":
+        log.info("resizing logical volume")
+        run(["lvresize", "-l100%vg", "vg00/lv00"])
+        log.info("resizing filesystem")
+        # XXX should always resize fs as a recovery step
+        run(["fsadm", "resize", vdev])
+
+    if nwritten == 0:
+        return 2
+    return 0
+
+def makebuffer(filesize, blocksize):
+    # input sizes are in megs, output sizes are in bytes
+    if filesize < 1 or filesize > 4000:
+        log.error("file size %s must be between 1 and 4000MiB" % (filesize))
+        return None, None, None
+    nblocks = int((filesize + (blocksize - 1)) / blocksize)
+    buf = [bytes(256 * 1024)] * (4 * blocksize)
+    bufsize = 1048576 * blocksize
+    nbytes = bufsize * nblocks
+    return buf, bufsize, nbytes
+
+def growfile(file, size, buf, bufsize, avail):
+    try:
+        oldsize = os.stat(file).st_size
+    except FileNotFoundError:
+        oldsize = 0
+
+    newsize = oldsize
+    fd = None
+    try: #{
+        while True: #{
+            if newsize > size:
+                log.error("file %s (size %s) is bigger than "
+                          "maximum size (%s)" %
+                          (file, fmtsize(newsize), fmtsize(size)))
+                break
+            if newsize == size:
+                break
+
+            if newsize > oldsize and newsize % (bufsize * 50) == 0:
+                log.verbose("wrote %s, %s remaining" %
+                            (fmtsize(newsize - oldsize, "byte"),
+                             fmtsize(size - newsize)))
+
+            wsize = bufsize - newsize % bufsize
+            if wsize > avail:
+                log.info("out of space on device")
+                break
+
+            if not fd:
+                if newsize == 0:
+                    log.info("creating file %s" % (file))
+                else:
+                    log.info("appending to file %s" % (file))
+                flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | \
+                        os.O_DSYNC | os.O_DIRECT
+                # the 0600 doesn't really do anything on fatfs
+                fd = os.open(file, flags, 0o600)
+
+            if wsize == bufsize:
+                b = buf
+            else:
+                m = wsize % len(buf[0])
+                n = int(wsize / len(buf[0]))
+                b = buf[:n] + [bytes(m)]
+            log.verbose2("writing %s of %s remaining" %
+                         (fmtsize(wsize, "byte"), fmtsize(size - newsize)))
+            try:
+                w = os.writev(fd, b)
+                if w != wsize:
+                    log.warning("wrote %s instead of %s" %
+                                (fmtsize(w), fmtsize(wsize, "bytes")))
+            except OSError as e:
+                if e.errno != errno.ENOSPC:
+                    raise
+                log.error("failed to write %s: %s" %
+                          (fmtsize(wsize, "byte"), e))
+                w = 0
+            if w == 0:
+                break
+
+            newsize += w
+            avail -= w
+        #}
+    #}
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+    if newsize == 0:
+        pass
+    elif oldsize == 0:
+        log.verbose("wrote %s total" %
+                    (fmtsize(newsize - oldsize, "byte")))
+    elif newsize > oldsize:
+        log.verbose("wrote %s total, file size %s" %
+                    (fmtsize(newsize - oldsize, "byte"),
+                     fmtsize(newsize)))
+    else:
+        log.verbose("existing file %s size %s" %
+                    (file, fmtsize(newsize)))
+
+    return oldsize, newsize
 
 def add(dev):
     mnt = "/mnt/" + dev
-    dir = mnt + "/prjx/storage/"
+    dir = mnt + "/prjx/storage"
 
     try:
-        if not check_partition(dev):
+        if not checkpartition(dev):
             log.info("ignoring %s" % (dev))
-            return
+            return 0
     except Exception:
-        return
+        return 1
 
     log.verbose("adding %s" % (dev))
 
-    # XXX check dev and mnt mount status
-    run(["mkdir", "-p", mnt])
-    try:
-        run(["mount", "/dev/" + dev, mnt])
-    except Exception:
-        os.rmdir(mnt)
-        log.error("failed to mount %s on %s" % (dev, mnt))
-        return
+    if not mountdev(dev, mnt):
+        return 1
     if not os.path.isdir(dir):
         run(["umount", mnt])
         os.rmdir(mnt)
         log.warning("device %s has not been provisioned" % (dev))
-        return
+        return 1
 
-    pvs = listdir(dir, "pv[0-9]{4}")
+    pvs = listdir(dir, "pv\d{4}")
     if len(pvs) == 0:
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.warning("device %s doesn't have any partition files" % (dev))
-        return
+        log.warning("device %s doesn't have any physical volume files" % (dev))
+        return 1
 
     try:
         loopdevs = []
         for pv in pvs:
-            f = dir + pv
-            log.verbose("adding physical partition %s" % (f))
+            f = "%s/%s" % (dir, pv)
             loopdev = run(["losetup", "-f", "--show", f]).strip("\n")
             loopdevs.append(loopdev)
         mountlv()
@@ -239,7 +437,24 @@ def add(dev):
             run(["losetup", "-d", loopdev])
         run(["umount", mnt])
         os.rmdir(mnt)
-        return
+        return 1
+
+    return 0
+
+def mountdev(dev, mnt):
+    devfile = "/dev/" + dev
+
+    # XXX check dev and mnt mount status
+    # XXX unfortunately fsck returns nonzero status when it fixes things
+    run(["fsck", "-fy", devfile], ignoreerr = True)
+    run(["mkdir", "-p", mnt])
+    try:
+        run(["mount", devfile, mnt])
+    except Exception:
+        os.rmdir(mnt)
+        log.error("failed to mount %s on %s" % (dev, mnt))
+        return False
+    return True
 
 def mountlv():
     vdev = "/dev/mapper/vg00-lv00"
@@ -281,24 +496,27 @@ def waitlv(vdev, timeout = 5):
 
 def remove(dev):
     mnt = "/mnt/" + dev
-    dir = mnt + "/prjx/storage/"
+    dir = mnt + "/prjx/storage"
 
-    try:
-        for pv in listdir(dir, "pv[0-9]{4}"):
-            loopdev = run_re(["losetup", "-j", dir + pv],
-                             "^(/dev/loop[1-9]+):")
-            if loopdev is not None:
+    if os.path.isdir(dir):
+        for pv in listdir(dir, "pv\d{4}"):
+            loopdev = run_re(["losetup", "-j", "%s/%s" % (dir, pv)],
+                             "^(/dev/loop\d+):")
+            if loopdev is None:
+                continue
+            try:
                 run(["losetup", "-d", loopdev])
-    except Exception:
-        log.error("failed remove a physical partition loopback device")
-        return
-
-    time.sleep(1) # XXX
-    run(["umount", mnt])
+            except Exception:
+                log.error("failed remove loopback device %s "
+                          "for physical volume " % (loopdev, pv))
+        time.sleep(2) # XXX
+    log.info("unmounting device %s" % (dev))
+    run(["umount", mnt], ignoreerr = True)
     os.rmdir(mnt)
+    return 0
 
-def check_partition(dev):
-    m = re.fullmatch("(sd[a-z])[0-9]+", dev)
+def checkpartition(dev):
+    m = re.fullmatch("(sd[a-z])\d+", dev)
     if not m:
         # better partition check
         log.error("%s is not a storage partition" % (dev))
@@ -318,10 +536,34 @@ def listdir(dir, pattern = None):
     res.sort()
     return res
 
+def readfile(file, isint = False):
+    with open(file) as f:
+        v = f.read().strip("\n")
+        if isint:
+            v = int(v)
+        return v
+
+def fmtsize(size, unit = None):
+    m = int(size / 1048576)
+    b = size % 1048576
+    if m > 0:
+        s = "%dM" % m
+    else:
+        s = ""
+    if s == "":
+        s = "%d" % (b)
+    elif b != 0:
+        s += "+%d" % (b)
+    if unit is not None:
+        s += " " + unit
+        if size != 1:
+            s += "s"
+    return s
+
 def run(cmd, stdin = subprocess.DEVNULL, ignoreerr = False,
         alwaysrun = False, quiet = False):
     if not quiet:
-        log.verbose("%s" % (" ".join(cmd)))
+        log.verbose2("%s" % (" ".join(cmd)))
     if not alwaysrun and opts.dryrun:
         return ""
     s = None
@@ -342,8 +584,8 @@ def run(cmd, stdin = subprocess.DEVNULL, ignoreerr = False,
             raise e
     return s.stdout
 
-def run_re(cmd, pattern):
-    s = run(cmd, alwaysrun = True, quiet = True)
+def run_re(cmd, pattern, ignoreerr = False):
+    s = run(cmd, alwaysrun = True, quiet = True, ignoreerr = ignoreerr)
     m = re.search(pattern, s, re.MULTILINE)
     if not m:
         return None
@@ -367,15 +609,20 @@ class Log(object):
     def error(self, msg):
         self._log(syslog.LOG_ERR, msg)
     def verbose(self, msg):
-        if not opts.verbose:
-            return
-        self._log(syslog.LOG_INFO, msg)
+        if opts.verbose > 0:
+            self._log(syslog.LOG_INFO, msg)
+    def verbose2(self, msg):
+        if opts.verbose > 1:
+            self._log(syslog.LOG_INFO, msg)
 
 if __name__ == "__main__":
     try:
         exit(main())
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        log.error(traceback.format_exc())
+    except Exception:
+        if log:
+            log.error(traceback.format_exc())
+        else:
+            traceback.print_exc()
     exit(1)
