@@ -288,8 +288,8 @@ def grow(dev, size, nfiles, minfree):
     else:
         log.info("%s written in %s" %
                  (fmtsize(nwritten, "byte"), fmtsize(nfwritten, "file")))
-    log.info("%s left on %s, %s reserved" %
-             (fmtsize(free, "byte"), dev, fmtsize(minfree)))
+        log.info("%s left on %s, %s reserved" %
+                 (fmtsize(free, "byte"), dev, fmtsize(minfree)))
 
     gvfree = run_re(["vgs", "-ovg_name,vg_free", "vg00"], "vg00\s+(\d+)")
     if gvfree != "0":
@@ -346,7 +346,8 @@ def growfile(file, size, buf, bufsize, avail):
                 if newsize == 0:
                     log.info("creating file %s" % (file))
                 else:
-                    log.info("appending to file %s" % (file))
+                    log.info("appending to file %s size %s" %
+                             (file, fmtsize(newsize)))
                 flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | \
                         os.O_DSYNC | os.O_DIRECT
                 # the 0600 doesn't really do anything on fatfs
