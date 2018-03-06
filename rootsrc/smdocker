@@ -1,19 +1,23 @@
 #!/bin/sh
 
-# The default mode is to run in foreground.  We use -t for that
-# because it buffers stdout otherwise.  Then we also have to use
-# -i to make control-C work.  Otherwise, it kills the docker
-# process but leaves the container running detached.
+# The default mode is to run interactively in the foreground.
+# We use -t for that because it buffers stdout otherwise.
+# Then we also have to use -i to make control-C work.
+# Otherwise, it kills the docker process but leaves the container
+# running detached.
+# If we don't give -i or -t, then it runs in the foreground
+# but is not interruptable.  We use this mode for instances
+# started by storaged.
 dockerargs="-it"
 cmd=storagemgr
 
 if [ "$1" = -d ]; then
-    # background, detached docker, storagemgr in daemon mode
-    dockerargs="-d"
+    # noninteraction, storagemgr in daemon mode
+    dockerargs=""
     cmd="$cmd -d"
     shift
 elif [ "$1" = -s ]; then
-    # interactive shell
+    # interactive shell for debugging
     cmd=bash
     shift
 fi

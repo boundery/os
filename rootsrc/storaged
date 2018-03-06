@@ -1,0 +1,610 @@
+#!/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+
+#
+# Constants
+#
+
+vg="vg00"
+lv="lv00"
+pv="pv"
+pv0="${pv}0000"
+lvname="$vg/$lv"
+lvdname="$vg-$lv"
+lvdev="/dev/mapper/$lvdname"
+lvmnt="/mnt/$lvdname"
+spath="prjx/storage"
+
+#
+# Global variables
+#
+# No, most of them don't have to be declared.
+# It's just nice to have a list here.
+#
+
+progname="${0##*/}"
+add=
+remove=
+unmountall=
+initstage=
+pidfile=
+dflag=
+qflag=
+vflag=0
+
+
+#
+# Main
+#
+
+main() {
+    parseargs "$@" || return 99
+
+    if [ "$add" != "" ]; then
+        add "$add"
+        return $?
+    fi
+
+    if [ "$remove" != "" ]; then
+        remove "$remove"
+        return $?
+    fi
+
+    if [ "$unmountall" != "" ]; then
+        unmountall
+        return $?
+    fi
+
+    if [ "$initstage" != "" ]; then
+        init "$initstage"
+        return $?
+    fi
+
+    return 0
+}
+
+parseargs() {
+    while getopts a:r:ui:p:dqv opt; do
+        case $opt in
+        (a)
+            add="$OPTARG"
+            ;;
+        (r)
+            remove="$OPTARG"
+            ;;
+        (u)
+            unmountall=1
+            ;;
+        (i)
+            initstage="$OPTARG"
+            ;;
+        (p)
+            pidfile="$OPTARG"
+            ;;
+        (d)
+            dflag=1
+            ;;
+        (q)
+            qflag=1
+            ;;
+        (v)
+            vflag=$(($vflag + 1))
+            ;;
+        (\?)
+            usage
+            return 1
+            ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
+    # just ignore the rest of argv
+
+    if [ "$SUBSYSTEM" = block -a "$MDEV" != "" ]; then
+        # called from mdev
+        case "$ACTION" in
+        (add)
+            add="$MDEV"
+            ;;
+        (remove)
+            remove="$MDEV"
+            ;;
+        esac
+    fi
+
+    if [ "$add" = "" -a "$remove" = "" -a "$unmountall" = ""  -a \
+         "$initstage" = "" ]; then
+        usage
+        return 1
+    fi
+
+    return 0
+}
+
+usage() {
+    {
+    echo "Usage: $progname [-dqv] -a dev"
+    echo "       $progname [-dqv] -r dev"
+    echo "       $progname [-dqv] -u"
+    echo "       $progname [-dqv] [-p pidfile] -i stage"
+    echo "    -a dev        add device"
+    echo "    -r dev        remove device"
+    echo "    -u            unmount everything"
+    echo "    -i stage      do init stage"
+    echo "    -p pidfile    save PID in pidfile when backgrounding"
+    echo "    -d            daemon mode, log to syslog"
+    echo "    -q            quiet, log less"
+    echo "    -v            verbose, log more"
+    } >&2
+}
+
+add() {
+    local dname="$1"
+    local mnt="/mnt/$dname"
+    local dir="$mnt/$spath"
+
+    checkpartition "$dname"
+    local status=$?
+    if [ $status -eq 2 ]; then
+        info "ignoring $dname"
+        return 0
+    fi
+    if [ $status -ne 0 ]; then
+        return 1
+    fi
+
+    verbose "adding $dname"
+
+    mountdev "$dname" "$mnt"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    if [ ! -d "$dir" ]; then
+        error "device $dname has not been provisioned"
+        return 1
+    fi
+
+    local pvs="$(listdir "$dir" "$pv[0-9][0-9][0-9][0-9]")"
+    if [ "$pvs" = "" ]; then
+        error "device $dname doesn't have any physical volume files"
+        return 1
+    fi
+
+    local loopdevs=""
+    local pv
+    for pv in $pvs; do
+        local f="$dir/$pv"
+        verbose "attaching physical volume $pv"
+        local loopdev=$(losetup -f --show "$f")
+        if [ $? -ne 0 ]; then
+            for l in loopdevs; do
+                run losetup -d "$l"
+            done
+            run umount "$mnt"
+            run rmdir "$mnt"
+            return 1
+        fi
+        loopdevs="$loopdevs $loopdev"s
+    done
+
+    mountlv
+    if [ $? -ne 0 ]; then
+        for l in loopdevs; do
+            run losetup -d "$l"
+        done
+        run umount "$mnt"
+        rmdir "$mnt"
+        return 1
+    fi
+
+    return 0
+}
+
+checkpartition() {
+    local dname="$1"
+
+    case "$dname" in
+    (sd[a-z][1-9]*)
+        ;;
+    (*)
+        error "$dname is not a storage partition"
+        return 1
+    esac
+    bdev=${dname%${dname#sd[a-z]}} # strip off the partition number
+    if egrep -qs "^/dname/($bdev|$dname) " /proc/1/mounts; then
+        info "$dname or $bdev is already mounted"
+        return 2
+    fi
+    return 0
+}
+
+mountdev() {
+    local dname="$1"
+    local mnt="$2"
+    local devfile="/dev/$dname"
+
+    run fsck -fy "$devfile"
+    run mkdir -p "$mnt"
+    run mount "$devfile" "$mnt"
+    if [ $? -ne 0 ]; then
+        run rmdir "$mnt"
+        error "failed to mount $dname on $mnt"
+        return 1
+    fi
+    return 0
+}
+
+mountlv() {
+    run lvchange -ay --activationmode complete $lvname
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    waitlv "$lvdev"
+    if [ $? -ne 0 ]; then
+        error "failed to activate logical volume $lvdname"
+        run lvchange -an $lvname
+        return 1
+    fi
+
+    run mkdir -p "$lvmnt"
+    run mount "$lvdev" "$lvmnt"
+    if [ $? -ne 0 ]; then
+        error "failed to mount logical volume $lvdname on $lvmnt"
+        run rmdir "$lvmnt"
+        run lvchange -an $lvname
+        return 1
+    fi
+
+    info "logical volume $lvdname mounted on $lvmnt"
+    return 0
+}
+
+waitlv() {
+    waitfile 5 "logical volume $lvdname" "$lvdev"
+    return $?
+}
+
+remove() {
+    local dname="$1"
+    local dev="/dev/$dname"
+    local mnt="/mnt/$dname"
+    local dir="$mnt/$spath"
+
+    local pv
+    for pv in $(listdir "$dir" "$pv[0-9][0-9][0-9][0-9]"); do
+        local loopdevs=$(losetup -j "$dir/$pv" | sed 's,^\(/dev/loop[1-9][0-9]*\):.*,\1,')
+        local loopdev
+        for loopdev in $loopdevs; do
+            verbose "detaching physical volume $pv"
+            run losetup -d $loopdev
+        done
+    done
+
+    sleep 2     # XXX
+    info "unmounting device $dname"
+    run umount "$dev"
+    run rmdir "$mnt"
+}
+
+unmountall() {
+    if [ -d "$lvmnt" ]; then
+        verbose "unmounting logical volume $lvdname"
+        unmountdocker
+        run umount "$lvmnt"
+        run rmdir "$lvmnt"
+    fi
+    run lvchange -an $lvname
+    local devs="$(listdir "/mnt" "sd[a-z]*")"
+    local d
+    for d in $devs; do
+        remove $d
+    done
+    return 0
+}
+
+init() {
+    local stage="$1"
+
+    if [ "$stage" -lt 0 -o "$stage" -gt 1 ]; then
+        error "invalid init stage $stage (should be 0 or 1)"
+        return 1
+    fi
+    init$stage
+    return $?
+}
+
+init0() {
+    local dname="sda1"
+    local dev="/dev/$dname"
+    local mnt="/mnt/$dname"
+    local dir="$mnt/$spath"
+
+    # We only need to wait for lvdev to be mounted on lvmnt,
+    # but the extra steps can mean a shorter overall timeout
+    # and better error message.
+    #
+    # Return nonzero to tell init to use tmpfs storage for docker.
+
+    waitfile 5 "device $dname" "$dev" || return $?
+    waitmount 30 "device $dname" "$dev" "$mnt" || return $?
+    if [ ! -f "$dir/$pv0" ]; then
+        # not provisioned, don't wait for it
+        verbose "device $dname has not been provisioned"
+        return 1
+    fi
+    waitmount 60 "logical volume $lvdname" "$lvdev" "$lvmnt" || return $?
+    info "logical volume $lvdname mounted on $lvmnt"
+
+    mountdocker || return $?
+    return 0
+}
+
+init1() {
+    local dname="sda1"
+    local dev="/dev/$dname"
+    local mnt="/mnt/$dname"
+    local dir="$mnt/$spath"
+
+    if ! checkmount "$lvdev" "$lvmnt"; then
+        # if there's a drive add() should have left it mounted
+        # XXX race with add()
+        if ! checkmount "$dev" "$mnt"; then
+            error "no USB storage device $dname found"
+            return 1
+        fi
+        if [ -f "$dir/$pv0" ]; then
+            error "physical volume file exists but is not attached"
+            return 1
+        fi
+        run mkdir -p "$dir"
+        runsm -p"$dname" -s64
+        if ! checkmount "$lvdev" "$lvmnt"; then
+            error "failed to provision device $dname"
+            return 1
+        fi
+    fi
+
+    if [ ! -d "$lvmnt/docker" ]; then
+        movedocker || return $?
+    fi
+
+    (
+        dflag=1
+        while true; do
+            info "expanding storage on device $dname"
+            runsm -g"$dname" -f1
+            local status=$?
+            if [ $status -eq 2 ]; then
+                break
+            fi
+            if [ $status -ne 0 ]; then
+                error "failed to expand storage to completion" \
+                      "on device $dname"
+                return $status
+            fi
+        done
+        info "device $dname completed"
+        if [ "$pidfile" != "" ]; then
+            run rm -f "$pidfile"
+        fi
+        return 0
+    ) &
+    if [ "$pidfile" != "" ]; then
+        echo "$!" >"$pidfile"
+    fi
+    return 0
+}
+
+startdocker() {
+    verbose "starting dockerd"
+    dockerd -p/var/run/dockerd.pid 2>&1 | logger -pdaemon.info -tdockerd &
+    waitcond 10 "dockerd to start" docker info
+    return $?
+}
+
+stopdocker() {
+    local p="/var/run/dockerd.pid"
+
+    if [ ! -f "$p" ]; then
+        warning "dockerd is not running"
+        return 0
+    fi
+    local pid="$(cat $p)"
+    verbose "stopping dockerd pid $pid"
+    run kill "$pid"
+    waitfile 20 "dockerd to exit" "$p" !
+    return $?
+}
+
+mountdocker() {
+    local dir="$lvmnt/docker"
+
+    if [ ! -d "$dir" ]; then
+        # this is only a minor error, init1 can fix it later
+        warning "no docker directory $dir"
+        return 1
+    fi
+    binddockerdir /var/lib/docker "$dir" &&
+    binddockerdir /etc/docker "$dir"
+    return $?
+}
+
+unmountdocker() {
+    run umount "/var/lib/docker" &&
+    run umount "/etc/docker"
+    return $?
+}
+
+movedocker() {
+    stopdocker &&
+    movedockerdir /var/lib/docker "$lvmnt/docker" &&
+    movedockerdir /etc/docker "$lvmnt/docker" &&
+    startdocker
+    return $?
+}
+
+movedockerdir() {
+    local src="$1"
+    local dst="$2"
+    local d="$dst$src"
+
+    verbose "copying $src to $d"
+    run rm -rf "$d" &&
+    run mkdir -p "$d" &&
+    run cp -ax "$src/." "$d" &&
+    run umount "$src" &&
+    binddockerdir "$src" "$dst"
+    return $?
+}
+
+binddockerdir() {
+    local src="$1"
+    local dst="$2"
+    local d="$dst$src"
+
+    verbose "mounting $d on $src"
+    run mount --bind "$d" "$src"
+    return $?
+}
+
+listdir() {
+    local dir="$1"
+    local pat="$2"
+
+    (cd "$dir" && ls -d $pat) 2>/dev/null
+}
+
+waitfile() {
+    local timeout="$1"
+    local printname="$2"
+    local file="$3"
+    local not="${4:+!}"
+
+    waitcond "$timeout" "$printname" [ $not -e "$file" ]
+    return $?
+}
+
+waitmount() {
+    local timeout="$1"
+    local printname="$2"
+    local dev="$3"
+    local dir="$4"
+    local not="${5:+not}"
+
+    waitcond "$timeout" "$printname to be mounted" \
+             $not checkmount "$dev" "$dir"
+    return $?
+}
+
+waitcond() {
+    local timeout="$1"
+    local printname="$2"
+    shift 2
+
+    timeout=$(($timeout * 2))
+    local quiet=$(($timeout - 6))
+
+    verbose "waiting for $printname..."
+    local i=$timeout
+    while ! "$@" >/dev/null 2>&1; do
+        if [ $i -le 0 ]; then
+            error "timed out waiting for $printname"
+            return 1
+        fi
+        if [ $i -le $quiet -a $(($i % 2)) -eq 0 ]; then
+            info "waiting for $printname...$(($i / 2))"
+        fi
+        i=$(($i - 1))
+        sleep 0.5
+    done
+    return 0
+}
+
+not() {
+    "$@" && return 1
+    return 0
+}
+
+checkmount() {
+    local dev="$1"
+    local dir="$2"
+
+    egrep -qs "^$dev $dir " /proc/1/mounts
+    return $?
+}
+
+
+#
+# Logging and debugging
+#
+
+log() {
+    local prio="$1"
+    shift
+
+    if ! [ "$dflag" ]; then
+        echo "$*"
+        return
+    fi
+    logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
+}
+
+error() {
+    log err "$@"
+}
+
+warning() {
+    log warning "$@"
+}
+
+info() {
+    [ "$qflag" ] || log info "$@"
+}
+
+verbose() {
+    [ "$vflag" -ge 1 ] && log info "$@"
+}
+
+verbose2() {
+    [ "$vflag" -ge 2 ] && log info "$@"
+}
+
+run() {
+    verbose2 "$*"
+    local status
+    if [ "$dflag" ]; then
+        # this is how to get the exit status, don't ask
+        status=`(("$@" 9>&-; echo $? >&9) 2>&1 | logger -pdaemon.info -t"$1" --id=$$) 9>&1`
+    else
+        "$@"
+        status=$?
+    fi
+    return $status
+}
+
+runsm() {
+    local d=${dflag:+-d}
+    local v
+    case $vflag in
+    (0)
+        ;;
+    (1)
+        v=-v
+        ;;
+    (*)
+        v=-vv
+        ;;
+    esac
+    verbose2 smdocker $d "$@" $v
+    smdocker $d "$@" $v
+    return $?
+}
+
+
+#
+# Run
+#
+
+main "$@"
+exit $?

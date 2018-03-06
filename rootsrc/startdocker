@@ -1,5 +1,20 @@
 #!/bin/sh
 
+pidfile=/var/run/dockerd.pid
+
+if [ "$1" = -k ]; then
+    if [ -f "$pidfile" ]; then
+        echo Stopping dockerd
+        kill `cat "$pidfile"`
+        while [ -f "$pidfile" ]; do
+            sleep 0.5
+        done
+    fi
+    exit
+fi
+
+echo Starting docker
+
 if ! grep -q '^cgroup /sys/fs/cgroup tmpfs' < /proc/mounts; then
     mount /sys/fs/cgroup
     (
@@ -18,7 +33,15 @@ fi
 # docker run --privileged needs this
 echo 1 >/sys/fs/cgroup/memory/memory.use_hierarchy
 
-dockerd -p /var/run/dockerd.pid 2>&1 | logger -p daemon.info -t dockerd &
+for i in /boot/layers/*.layers; do
+    for layer in `cat $i`; do
+        if ! mountpoint -q /boot/layers/$layer; then
+            mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
+        fi
+    done
+done
+
+dockerd -p "$pidfile" 2>&1 | logger -p daemon.info -t dockerd &
 
 while ! docker info >/dev/null 2>&1; do
     sleep 0.5
@@ -28,14 +51,11 @@ done
 # containers.
 touch /etc/resolv.conf
 
-if ! docker images | grep -q ^debian; then
+if [ -n "`docker images -q python3`" ]; then
+    docker ps -aq | xargs -r docker rm
+else
     for i in /boot/layers/*.layers; do
         if [ "$i" = "/boot/layers/rootfs.layers" ]; then continue; fi
-
-        for layer in `cat $i`; do
-            if mountpoint -q /boot/layers/$layer; then continue; fi
-            mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
-        done
 
         name=`basename ${i%.*}`
 
@@ -50,7 +70,6 @@ if ! docker images | grep -q ^debian; then
         fi
 
         for layer in `cat $i`; do
-            if [ "$i" = "/boot/layers/rootfs.layers" ]; then continue; fi
             DIRNAME=`grep $layer /var/lib/docker/image/overlay2/layerdb/sha256/*/diff | cut -d'/' -f9`
             CACHEID=`cat /var/lib/docker/image/overlay2/layerdb/sha256/$DIRNAME/cache-id`
             if [ -h /var/lib/docker/overlay2/$CACHEID ]; then continue; fi

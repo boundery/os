@@ -94,13 +94,14 @@ def parse_args(args = None):
 def unmountall():
     mnt = "/mnt"
     vmnt = mnt + "/vg00-lv00"
-    log.info("unmounting logical volume %s" % (vmnt))
     if os.path.isdir(vmnt):
+        log.verbose("unmounting logical volume %s" % (vmnt))
         run(["umount", vmnt], ignoreerr = True)
         os.rmdir(vmnt)
     run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
     for dev in listdir(mnt, "sd[a-z]\d+"):
         remove(dev)
+    log.info("all devices unmounted")
     return 0
 
 def provision(dev, size):
@@ -109,24 +110,26 @@ def provision(dev, size):
     file = "%s/pv0000" % (dir)
     tmpfile = "%s/tmp0000" % (dir)
 
-    try:
-        if not checkpartition(dev):
-            log.error("can't provision %s" % (dev))
-            return 0
-    except Exception:
+    # mount device if not already mounted
+    if not devmounted(dev, mnt):
+        try:
+            if not checkpartition(dev):
+                log.error("can't provision %s" % (dev))
+                return 0
+        except Exception:
+            return 1
+        if not mountdev(dev, mnt):
+            return 1
+
+    if os.path.isfile(file):
+        run(["umount", mnt])
+        os.rmdir(mnt)
+        log.error("device %s is already provisioned" % (dev))
         return 1
 
     # write in 8MB units
     buf, bufsize, goalsize = makebuffer(size, 8)
     if buf is None:
-        return 1
-
-    if not mountdev(dev, mnt):
-        return 1
-    if os.path.isfile(file):
-        run(["umount", mnt])
-        os.rmdir(mnt)
-        log.error("device %s is already provisioned" % (dev))
         return 1
 
     try:
@@ -241,8 +244,11 @@ def grow(dev, size, nfiles, minfree):
         file = "%s/pv%04d" % (dir, index)
         index += 1
 
+        pid = "-p%d" % os.getpid()
+        run(["ionice", "-c3", pid])
         oldsize, newsize = growfile(file, goalsize, buf, bufsize,
                                     free - minfree)
+        run(["ionice", "-c0", pid])
         n = newsize - oldsize
         nwritten += n
         free -= n
@@ -296,12 +302,10 @@ def grow(dev, size, nfiles, minfree):
         log.info("resizing logical volume")
         run(["lvresize", "-l100%vg", "vg00/lv00"])
         log.info("resizing filesystem")
-        # XXX should always resize fs as a recovery step
-        run(["fsadm", "resize", vdev])
+    # have to always resize fs because we don't know if we need it
+    run(["fsadm", "resize", vdev])
 
-    if nwritten == 0:
-        return 2
-    return 0
+    return 2 if nwritten == 0 else 0
 
 def makebuffer(filesize, blocksize):
     # input sizes are in megs, output sizes are in bytes
@@ -414,15 +418,11 @@ def add(dev):
     if not mountdev(dev, mnt):
         return 1
     if not os.path.isdir(dir):
-        run(["umount", mnt])
-        os.rmdir(mnt)
         log.warning("device %s has not been provisioned" % (dev))
         return 1
 
     pvs = listdir(dir, "pv\d{4}")
     if len(pvs) == 0:
-        run(["umount", mnt])
-        os.rmdir(mnt)
         log.warning("device %s doesn't have any physical volume files" % (dev))
         return 1
 
@@ -430,22 +430,23 @@ def add(dev):
         loopdevs = []
         for pv in pvs:
             f = "%s/%s" % (dir, pv)
+            log.verbose("attaching physical volume %s" % (pv))
             loopdev = run(["losetup", "-f", "--show", f]).strip("\n")
             loopdevs.append(loopdev)
         mountlv()
     except Exception:
         for loopdev in loopdevs:
             run(["losetup", "-d", loopdev])
-        run(["umount", mnt])
-        os.rmdir(mnt)
         return 1
 
     return 0
 
+def devmounted(dev, mnt):
+    return file_re("/proc/1/mounts", "^(/dev/%s) %s " % (dev, mnt)) is not None
+
 def mountdev(dev, mnt):
     devfile = "/dev/" + dev
 
-    # XXX check dev and mnt mount status
     # XXX unfortunately fsck returns nonzero status when it fixes things
     run(["fsck", "-fy", devfile], ignoreerr = True)
     run(["mkdir", "-p", mnt])
@@ -504,8 +505,10 @@ def remove(dev):
             loopdev = run_re(["losetup", "-j", "%s/%s" % (dir, pv)],
                              "^(/dev/loop\d+):")
             if loopdev is None:
+                log.verbose("physical volume %s is not attached" % (pv))
                 continue
             try:
+                log.verbose("detaching physical volume %s" % (pv))
                 run(["losetup", "-d", loopdev])
             except Exception:
                 log.error("failed remove loopback device %s "
@@ -523,7 +526,7 @@ def checkpartition(dev):
         log.error("%s is not a storage partition" % (dev))
         raise RuntimeError()
     bdev = m.group(1)
-    mounted = run_re(["mount"], "^(/dev/(?:%s|%s)) on " % (bdev, dev))
+    mounted = file_re("/proc/1/mounts", "^(/dev/(?:%s|%s)) " % (bdev, dev))
     if mounted is not None:
         log.info("%s is already mounted" % (mounted))
         return False
@@ -591,6 +594,14 @@ def run_re(cmd, pattern, ignoreerr = False):
     if not m:
         return None
     return m.group(1)
+
+def file_re(file, pattern):
+    with open(file) as f:
+        for s in f:
+            m = re.search(pattern, s)
+            if m:
+                return m.group(1)
+    return None
 
 class Log(object):
     def __init__(self):

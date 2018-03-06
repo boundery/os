@@ -27,6 +27,7 @@ RUN    apt-get update \
            ca-certificates \
            procps \
            busybox-syslogd \
+           dosfstools \
            lvm2 \
            /debs/*.deb \
     && if [ "$FROM_PREFIX" = arm32v7/ ]; then \
@@ -46,7 +47,7 @@ COPY wpa_supplicant.conf /usr/local/etc
 COPY mkwpaconf /usr/local/sbin
 COPY startdocker /usr/local/sbin
 COPY netd /usr/local/sbin
-COPY storagemgr /usr/local/sbin
+COPY storaged /usr/local/sbin
 COPY smdocker /usr/local/sbin
 COPY unsplit-tar /usr/local/sbin
 COPY sethostname /etc/dhcp/dhclient-exit-hooks.d
