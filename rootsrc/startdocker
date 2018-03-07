@@ -33,13 +33,26 @@ fi
 # docker run --privileged needs this
 echo 1 >/sys/fs/cgroup/memory/memory.use_hierarchy
 
-for i in /boot/layers/*.layers; do
-    for layer in `cat $i`; do
-        if ! mountpoint -q /boot/layers/$layer; then
-            mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
-        fi
-    done
+layers="$(cat $(ls /boot/layers/*.layers | grep -v '/rootfs.layers$') |
+          sort -u)"
+for layer in $layers; do
+    if ! mountpoint -q /boot/layers/$layer; then
+        mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
+    fi
 done
+
+# Validate the links in docker images.  We may have changed image
+# contents (dead link), or added images (unreferenced layer),
+# or removed images (dead link).
+if [ -d /var/lib/docker/overlay2 ]; then
+    dlayers="$(readlink /var/lib/docker/overlay2/*/diff |
+               sed -n -es,/boot/layers/,,p |
+               sort -u)"
+    if [ "$dlayers" != "$layers" ]; then
+        echo "Cached docker images are no longer valid, will reload images."
+        (cd /var/lib/docker; ls -A | xargs -d'\n' rm -rf)
+    fi
+fi
 
 dockerd -p "$pidfile" 2>&1 | logger -p daemon.info -t dockerd &
 
@@ -70,9 +83,9 @@ else
         fi
 
         for layer in `cat $i`; do
-            DIRNAME=`grep $layer /var/lib/docker/image/overlay2/layerdb/sha256/*/diff | cut -d'/' -f9`
+            DIRNAME=`grep -l $layer /var/lib/docker/image/overlay2/layerdb/sha256/*/diff | cut -d'/' -f9`
             CACHEID=`cat /var/lib/docker/image/overlay2/layerdb/sha256/$DIRNAME/cache-id`
-            if [ -h /var/lib/docker/overlay2/$CACHEID ]; then continue; fi
+            if [ -h /var/lib/docker/overlay2/$CACHEID/diff ]; then continue; fi
 
             rm -rf /var/lib/docker/overlay2/$CACHEID/diff
             ln -sf /boot/layers/$layer /var/lib/docker/overlay2/$CACHEID/diff
