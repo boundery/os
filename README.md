@@ -7,4 +7,9 @@ The current state is between Proof-of-concept and Alpha.  Installable images wil
 
 We have a IRC channel: #prjx on Freenode.
 
+Nolan gave a talk at SCALE16x in Pasadena:
+Slides:
+https://sigbus.net/prjx_scale16.pdf
 
+Talk video:
+https://youtu.be/9t4aMPF1UYU?t=8554
