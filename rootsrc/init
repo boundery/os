@@ -62,6 +62,19 @@ if [ -f /boot/zerotier.conf ]; then
             --name zerotier zerotier
 fi
 
+#XXX This waits forever if there is no wlan/eth network...
+echo "Waiting for Zerotier private network to come up."
+while ! ip link show zt0 >/dev/null 2>&1; do
+    sleep 0.5
+done
+
+#Create default networks
+#XXX Create a public network, and disable default/docker0
+#XXX This should use --internal, so the container can't hit the internet, but
+#    that breaks access to other hosts on the zerotier bridge.
+docker network create --subnet=172.18.0.0/22 --ip-range=172.18.0.0/23 \
+       -d macvlan -o parent=zt0 private
+
 # XXX eventually this will be some form of getty
 setsid -cw bash -l
 
