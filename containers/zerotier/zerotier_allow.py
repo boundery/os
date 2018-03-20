@@ -54,7 +54,7 @@ if not netid: #Create the network
                            'v6AssignMode': {'rfc4193': False, 'zt': False, '6plane': True},
                            'v4AssignMode': {'zt': True},
                            'tags': [], 'private': True,
-                           'ipAssignmentPools': [{'ipRangeEnd': '172.18.3.254', 'ipRangeStart': '172.18.0.1'}],
+                           'ipAssignmentPools': [{'ipRangeEnd': '172.18.3.254', 'ipRangeStart': '172.18.2.1'}],
                            'enableBroadcast': True,
                            'routes': [{'via': None, 'target': '172.18.0.0/22'}]
                          }
