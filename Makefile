@@ -424,4 +424,21 @@ else ifeq ($(ARCH), amd64)
 img: pc_img
 endif
 
+########################
+# Qemu emulation targets
+
+ifeq ($(ARCH), armhf)
+qemu-run: $(RPI3_IMG)
+	@echo -e "\nctrl-a x to exit qemu\n"
+	qemu-system-arm -nographic -M virt -kernel build/armhf/imgfs/zImage \
+	  -initrd build/armhf/imgfs/initrd -m 2048 -no-reboot \
+	  -hda build/armhf/images/rpi3image.bin
+else ifeq ($(ARCH), amd64)
+qemu-run: $(PC_IMG)
+	@echo -e "\nctrl-a x to exit qemu\n"
+	qemu-system-x86_64 -enable-kvm -nographic -m 2048 \
+	  -hda build/amd64/images/pcimage.bin
+endif
+PHONY += qemu-run
+
 .PHONY: $(PHONY)
