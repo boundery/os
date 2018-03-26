@@ -86,8 +86,6 @@ while not member:
         raise Exception("Timed out waiting for member to show up")
 
 #Now authorize ourselves, if we're not already.
-#XXX Need to handle if there is already a "private" member with this IP, from
-#    a previous run.
 if member["config"]["authorized"] != True:
     print("Not authorized, authorizing with ZT Central")
     newmember = {}
@@ -95,7 +93,7 @@ if member["config"]["authorized"] != True:
     newmember["config"]["authorized"] = True
     newmember["config"]["activeBridge"] = True
     newmember["name"] = "services"
-    #ZT Central autosetting the IPv4 addr is busted, so set it here.
+    #ZT Central doesn't autoset IPv4 addr because of "activeBridge", so set it here.
     newmember["config"]["ipAssignments"] = [ "172.18.0.1" ]
     zt_post("network/%s/member/%s" % (netid, hostid),
             newmember)
