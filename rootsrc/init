@@ -63,9 +63,9 @@ if [ -f /boot/zerotier.conf ]; then
 fi
 
 #XXX This waits forever if there is no wlan/eth network...
-echo "Waiting for Zerotier private network to come up."
 while ! ip link show zt0 >/dev/null 2>&1; do
-    sleep 0.5
+    echo "Waiting for Zerotier private network to come up."
+    sleep 1
 done
 
 #Create default networks
