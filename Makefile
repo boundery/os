@@ -147,10 +147,9 @@ $(KERNEL_SRC):
 	@mkdir -p $(KERNELDIR)
 	wget -qO- $(KERNEL_URL) | tar --strip-components=1 -xJ -C $(KERNELDIR)
 
-#XXX This doesn't rebuild kernel if ARCH_kconfig file changes.
 KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
-$(KERNEL_PATCH): $(KERNEL_SRC)
+$(KERNEL_PATCH): $(KERNEL_SRC) $(KCONFIGDIR)/$(ARCH)_kconfig
 	cp $(KCONFIGDIR)/$(ARCH)_kconfig $(KERNELDIR)/.config
 	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/linux/series $(KERNELDIR)
 
@@ -189,7 +188,7 @@ $(UBOOT_SRC):
 
 UBOOT_PATCH := $(UBOOTDIR)/.config
 uboot_patch: $(UBOOT_PATCH)
-$(UBOOT_PATCH): $(UBOOT_SRC)
+$(UBOOT_PATCH): $(UBOOT_SRC) $(KCONFIGDIR)/$(ARCH)_uconfig
 	cp $(KCONFIGDIR)/$(ARCH)_uconfig $(UBOOTDIR)/.config
 	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/uboot/series $(UBOOTDIR)
 
