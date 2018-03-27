@@ -150,8 +150,8 @@ $(KERNEL_SRC):
 KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
 $(KERNEL_PATCH): $(KERNEL_SRC) $(KCONFIGDIR)/$(ARCH)_kconfig
-	cp $(KCONFIGDIR)/$(ARCH)_kconfig $(KERNELDIR)/.config
 	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/linux/series $(KERNELDIR)
+	cp $(KCONFIGDIR)/$(ARCH)_kconfig $(KERNELDIR)/.config
 
 KERNEL := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/$(KERNEL_IMG)
 kernel: $(KERNEL)
@@ -189,8 +189,8 @@ $(UBOOT_SRC):
 UBOOT_PATCH := $(UBOOTDIR)/.config
 uboot_patch: $(UBOOT_PATCH)
 $(UBOOT_PATCH): $(UBOOT_SRC) $(KCONFIGDIR)/$(ARCH)_uconfig
-	cp $(KCONFIGDIR)/$(ARCH)_uconfig $(UBOOTDIR)/.config
 	$(SCRIPTDIR)/apply-patch-series $(PATCHDIR)/uboot/series $(UBOOTDIR)
+	cp $(KCONFIGDIR)/$(ARCH)_uconfig $(UBOOTDIR)/.config
 
 UBOOT := $(UBOOTDIR)/$(UBOOT_IMG)
 uboot: $(UBOOT)

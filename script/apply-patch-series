@@ -1,7 +1,7 @@
 #!/bin/bash
 # Copyright 2012 Cumulus Networks Inc, all rights reserved
 
-#From http://oss.cumulusnetworks.com/CumulusLinux-2.5.9/scripts/apply-patch-series 
+#From http://oss.cumulusnetworks.com/CumulusLinux-2.5.9/scripts/apply-patch-series
 
 set -e
 
@@ -27,13 +27,16 @@ apply_series () {
             continue
         fi
 
-        echo "Applying ${PATCH_ROOT}/${line}"
-        if patch -p1 < "${PATCH_ROOT}/${line}"
-        then
-            echo "Patch OK"
+        if patch --dry-run -R -f -p1 < "${PATCH_ROOT}/${line}" > /dev/null; then
+            echo "Skipping already applied patch ${PATCH_ROOT}/${line}"
         else
-            echo "Patch failed: $?" >&2
-            exit 1
+            echo "Applying ${PATCH_ROOT}/${line}"
+            if patch -N -p1 < "${PATCH_ROOT}/${line}"; then
+                echo "Patch OK"
+            else
+                echo "Patch failed: $?" >&2
+                exit 1
+            fi
         fi
     done
 }
@@ -61,9 +64,9 @@ import_series ()  {
 
 if [ x"$3" == x"--stgit" ]
 then
-    [ ! -f ${PATCH_ROOT}/gitignore ] ||	cp ${PATCH_ROOT}/gitignore $SRC/.gitignore
+    [ ! -f ${PATCH_ROOT}/gitignore ] || cp ${PATCH_ROOT}/gitignore $SRC/.gitignore
     cd "$SRC" && \
-    git init &&  
+    git init &&
     git add . &&
 	(git commit -m "Unmodified debian src" || echo "git commit failed") &&
     (if stg init; then
