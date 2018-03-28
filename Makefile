@@ -96,7 +96,6 @@ BUILDDIR := $(SRCDIR)/build/$(ARCH)
 INITRDDIR := $(BUILDDIR)/initrd
 FSDIR := $(BUILDDIR)/fs
 OSFSDIR := $(FSDIR)/rootfs
-EXTRADEBDIR := $(BUILDDIR)/extradebs
 KERNELDIR := $(BUILDDIR)/linux
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
@@ -265,25 +264,10 @@ initrd_clean:
 	docker rmi -f $(FROM_PREFIX)initrd >/dev/null 2>&1 || true
 	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
 
-#XXX Fold this into the Dockerfile.
-EXTRA_DEB_URLS=$(SRCDIR)/extra_deb_urls
-EXTRA_DEBS := $(shell $(SCRIPTDIR)/urls-to-files $(ARCH) $(EXTRADEBDIR) <$(EXTRA_DEB_URLS))
-extra_debs: $(EXTRA_DEBS)
-$(EXTRA_DEBS): $(EXTRA_DEB_URLS)
-	@mkdir -p $(EXTRADEBDIR)
-	@rm -f $(EXTRADEBDIR)/*
-	wget -qcP $(EXTRADEBDIR)/ \
-	  $(shell sed 's/XARCHX/$(ARCH)/g' <$(EXTRA_DEB_URLS))
-	@touch $(EXTRA_DEBS)
-
-PHONY += extra_debs_clean
-extra_debs_clean:
-	rm -rf $(EXTRADEBDIR)
-
 ROOTFS := $(FSDIR)/rootfs.layers
 rootfs: $(ROOTFS)
-$(ROOTFS): $(ROOTSRCDIR)/* $(EXTRA_DEBS) $(SCRIPTDIR)/untar-docker-image
-	tar cf - -C $(ROOTSRCDIR) . -C $(EXTRADEBDIR) . | \
+$(ROOTFS): $(ROOTSRCDIR)/* $(SCRIPTDIR)/untar-docker-image
+	tar cf - -C $(ROOTSRCDIR) .  | \
 	  $(SCRIPTDIR)/mkcontainer -r rootfs '$(FROM_PREFIX)' - \
 		$(FSDIR) \
 		$(IMGFSDIR)/layers \

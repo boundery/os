@@ -2,19 +2,23 @@ ARG FROM_PREFIX
 
 FROM ${FROM_PREFIX}debian:stretch-slim
 
-COPY *.deb *.pub /debs/
+COPY *.pub /keys/
 
 ARG FROM_PREFIX
 
 RUN    apt-get update \
+    && apt-get install -y --no-install-recommends gnupg apt-transport-https ca-certificates \
     && if [ "$FROM_PREFIX" = arm32v7/ ]; then \
-           apt-get install -y --no-install-recommends gnupg \
-        && apt-key add /debs/*.pub \
+           apt-key add /keys/raspbian.pub \
         && echo 'deb http://archive.raspberrypi.org/debian/ stretch main' \
                 >/etc/apt/sources.list.d/raspbian.list \
         && apt-get update \
         && apt-get install -y --no-install-recommends firmware-brcm80211 \
        ;fi \
+    && apt-key add /keys/docker.pub \
+    && echo 'deb https://download.docker.com/linux/debian/ stretch stable' \
+            >/etc/apt/sources.list.d/docker.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
            kmod \
            net-tools \
@@ -29,15 +33,13 @@ RUN    apt-get update \
            busybox-syslogd \
            dosfstools \
            lvm2 \
-           /debs/*.deb \
-    && if [ "$FROM_PREFIX" = arm32v7/ ]; then \
-        apt-get remove -y --autoremove gnupg \
-       ;fi \
+           docker-ce \
+    && apt-get remove -y --purge --autoremove gnupg apt-transport-https \
     && mkdir -p /var/lib/docker /etc/docker \
     && ln -s ../bin/busybox /sbin/mdev \
     && rm -rf /var/tmp && ln -s /tmp /var/tmp \
     && rm -rf /var/lib/openntpd && ln -sf /run/openntpd /var/lib/openntpd \
-    && rm -rf /debs \
+    && rm -rf /keys \
     && rm -rf /var/lib/apt/lists/*
 
 COPY init /sbin/
