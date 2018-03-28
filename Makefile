@@ -9,16 +9,18 @@
 #    valuable is the seperation between build env and run env provided by .deb?
 
 #XXX Turn the http:// URLs into https:// if we can fix apt-cacher-ng to work with them.
-#XXX Check signatures for downloads!
+
+SHELL=/bin/bash #tarfile signature checking uses process redirection.
 
 DEBIAN_RELEASE := stretch
 
 KERNEL_VERSION = 4.14.30
+UBOOT_VERSION = 2017.09
 BOOTFW_VERSION = 1.20170811
 BUSYBOX_VERSION = 1.28.0-uclibc
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
-UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-2017.09.tar.bz2
+UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-$(UBOOT_VERSION).tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
 
 ######################################################
@@ -91,6 +93,7 @@ ROOTSRCDIR := $(SRCDIR)/rootsrc
 INITRDSRCDIR := $(SRCDIR)/initrdsrc
 DEVELDIR := $(SRCDIR)/devel
 CONTAINERDIR := $(SRCDIR)/containers
+SIGDIR := $(SRCDIR)/sigs
 
 BUILDDIR := $(SRCDIR)/build/$(ARCH)
 INITRDDIR := $(BUILDDIR)/initrd
@@ -112,7 +115,7 @@ FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
 
 #XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
 #XXX new enough cross tools, u-boot-tools (mkenvimage), mtools, grub (EFI and pc),
-#    docker, xorriso, etc.
+#    docker, xorriso, gpg2, etc.
 
 #Make sure binfmt is configured properly for cross-builds
 ifneq ($(shell echo '50c12d79f40fc1cacc4819ae9bac6bb1  /proc/sys/fs/binfmt_misc/qemu-arm' | \
@@ -144,7 +147,10 @@ KERNEL_SRC := $(KERNELDIR)/Makefile
 kernel_src: $(KERNEL_SRC)
 $(KERNEL_SRC):
 	@mkdir -p $(KERNELDIR)
-	wget -qO- $(KERNEL_URL) | tar --strip-components=1 -xJ -C $(KERNELDIR)
+	wget -qO- $(KERNEL_URL) | xz -cd | \
+	  tee >(tar --strip-components=1 -x -C $(KERNELDIR)) | \
+	  gpg --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
+	  --verify $(SIGDIR)/linux-$(KERNEL_VERSION).tar.sign -
 
 KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
@@ -183,7 +189,9 @@ UBOOT_SRC := $(UBOOTDIR)/Makefile
 uboot_src: $(UBOOT_SRC)
 $(UBOOT_SRC):
 	@mkdir -p $(UBOOTDIR)
-	wget -qO- $(UBOOT_URL) | tar --strip-components=1 -xj -C $(UBOOTDIR)
+	wget -qO- $(UBOOT_URL) | tee >(tar --strip-components=1 -xj -C $(UBOOTDIR)) | \
+	  gpg --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
+	  --verify $(SIGDIR)/u-boot-$(UBOOT_VERSION).tar.bz2.sig -
 
 UBOOT_PATCH := $(UBOOTDIR)/.config
 uboot_patch: $(UBOOT_PATCH)
@@ -202,6 +210,7 @@ PHONY += uboot_clean
 uboot_clean:
 	rm -rf $(UBOOTDIR)
 
+#XXX Should check signature of BOOTFW.  May be easier said than done.
 BOOTFW_SRC := $(BOOTFWDIR)/COPYING.linux
 bootfw_src: $(BOOTFW_SRC)
 $(BOOTFW_SRC):
