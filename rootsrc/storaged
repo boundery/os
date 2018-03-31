@@ -503,7 +503,7 @@ waitcond() {
     shift 2
 
     timeout=$(($timeout * 2))
-    local quiet=$(($timeout - 6))
+    local quiet=$(($timeout - 8))
 
     verbose "waiting for $printname..."
     local i=$timeout
@@ -597,6 +597,8 @@ runsm() {
         ;;
     esac
     verbose2 smdocker $d "$@" $v
+    # don't have to use run because -d takes care of logging
+    # but docker errors are missed
     smdocker $d "$@" $v
     return $?
 }

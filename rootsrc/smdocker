@@ -10,6 +10,8 @@
 # started by storaged.
 dockerargs="-it"
 cmd=storagemgr
+mounts="--mount=type=bind,src=/dev,dst=/dev
+        --mount=type=bind,src=/mnt,dst=/mnt,bind-propagation=shared"
 
 if [ "$1" = -d ]; then
     # noninteraction, storagemgr in daemon mode
@@ -21,14 +23,12 @@ elif [ "$1" = -s ]; then
     cmd=bash
     shift
     if [ -f /.bashrc ]; then
-        m="--mount=type=bind,src=/.bashrc,dst=/root/.bashrc"
+        mounts="$mounts --mount=type=bind,src=/.bashrc,dst=/root/.bashrc"
     fi
 fi
 
 exec docker run --rm --privileged \
-    --mount=type=bind,src=/dev,dst=/dev \
-    --mount=type=bind,src=/mnt,dst=/mnt,bind-propagation=shared \
-    $m \
+    $mounts \
     -e ACTION="$ACTION" \
     -e SUBSYSTEM="$SUBSYSTEM" \
     -e MDEV="$MDEV" \
