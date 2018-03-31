@@ -451,7 +451,8 @@ def mountdev(dev, mnt):
     run(["fsck", "-fy", devfile], ignoreerr = True)
     run(["mkdir", "-p", mnt])
     try:
-        run(["mount", devfile, mnt])
+        # while this is usually a fatfs, it doesn't have to be
+        run(["mount", "-onoexec,nosuid,nodev", devfile, mnt])
     except Exception:
         os.rmdir(mnt)
         log.error("failed to mount %s on %s" % (dev, mnt))
@@ -477,7 +478,7 @@ def mountlv():
 def mountlv1(vdev, vdir):
     run(["mkdir", "-p", vdir])
     try:
-        run(["mount", vdev, vdir])
+        run(["mount", "-onoexec,nosuid,nodev", vdev, vdir])
     except Exception:
         log.error("failed to mount logical volume %s on %s" % (vdev, vdir))
         os.rmdir(vdir)
