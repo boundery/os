@@ -149,7 +149,7 @@ $(KERNEL_SRC):
 	@mkdir -p $(KERNELDIR)
 	wget -qO- $(KERNEL_URL) | xz -cd | \
 	  tee >(tar --strip-components=1 -x -C $(KERNELDIR)) | \
-	  gpg --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
+	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
 	  --verify $(SIGDIR)/linux-$(KERNEL_VERSION).tar.sign -
 
 KERNEL_PATCH := $(KERNELDIR)/.config
@@ -190,7 +190,7 @@ uboot_src: $(UBOOT_SRC)
 $(UBOOT_SRC):
 	@mkdir -p $(UBOOTDIR)
 	wget -qO- $(UBOOT_URL) | tee >(tar --strip-components=1 -xj -C $(UBOOTDIR)) | \
-	  gpg --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
+	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
 	  --verify $(SIGDIR)/u-boot-$(UBOOT_VERSION).tar.bz2.sig -
 
 UBOOT_PATCH := $(UBOOTDIR)/.config
