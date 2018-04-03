@@ -32,7 +32,7 @@ mdev -s &
 # Wait for storage to be mounted, if already provisioned
 storaged -i0 -v
 if [ $? -ne 0 ]; then
-    echo storaged -i0 failed, starting docker on tmpfs
+    echo No USB storage, starting docker on tmpfs
     dockerontmpfs=1
     mount /etc/docker
     mount -osize=256M /var/lib/docker

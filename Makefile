@@ -174,7 +174,7 @@ KERNEL_MOD_INSTALL := $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
 $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 	( cd $(KERNELDIR); \
-	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
+	  $(FAKEROOT) -s $(FSDIR).fakeroot \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	          INSTALL_MOD_PATH=$(OSFSDIR) \
 	          modules_install )
@@ -273,7 +273,7 @@ initrd_clean:
 	docker rmi -f $(FROM_PREFIX)initrd >/dev/null 2>&1 || true
 	rm -rf $(INITRD) $(INITRDDIR) $(INITRDDIR).fakeroot
 
-ROOTFS := $(FSDIR)/rootfs.layers
+ROOTFS := $(IMGFSDIR)/layers/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(SCRIPTDIR)/untar-docker-image
 	tar cf - -C $(ROOTSRCDIR) .  | \
@@ -281,10 +281,10 @@ $(ROOTFS): $(ROOTSRCDIR)/* $(SCRIPTDIR)/untar-docker-image
 		$(FSDIR) \
 		$(IMGFSDIR)/layers \
 		'$(DOCKER_BUILD_PROXY)'
-	$(FAKEROOT) -s $(FSDIR)/fakeroot \
+	$(FAKEROOT) -s $(FSDIR).fakeroot \
 	  $(SCRIPTDIR)/fixroot $(ROOTSRCDIR) $(OSFSDIR)
 	@[ ! -d $(DEVELDIR)/rootfs ] || \
-	  $(FAKEROOT) -s $(FSDIR)/fakeroot \
+	  $(FAKEROOT) -s $(FSDIR).fakeroot \
 	  cp -r $(DEVELDIR)/rootfs/. $(OSFSDIR)
 ifndef KEEP_CONTAINER
 	-docker rmi $(FROM_PREFIX)rootfs
@@ -299,12 +299,12 @@ rootfs_clean:
 		$(FSDIR) \
 		$(IMGFSDIR)/layers
 
-PYTHON3 := $(FSDIR)/python3.off
+PYTHON3 := $(IMGFSDIR)/layers/python3.off
 python3: $(PYTHON3)
 $(PYTHON3): $(CONTAINERDIR)/python3/* $(SCRIPTDIR)/untar-docker-image
 	$(SCRIPTDIR)/mkcontainer -t python3 '$(FROM_PREFIX)' \
 		$(CONTAINERDIR)/python3 \
-		$(FSDIR)\
+		$(FSDIR) \
 		$(IMGFSDIR)/layers \
 		'$(DOCKER_BUILD_PROXY)'
 CONTAINERS += $(PYTHON3)
@@ -315,7 +315,7 @@ python3_clean:
 		$(FSDIR) \
 		$(IMGFSDIR)/layers
 
-STORAGEMGR := $(FSDIR)/storagemgr.off
+STORAGEMGR := $(IMGFSDIR)/layers/storagemgr.off
 storagemgr: $(STORAGEMGR)
 $(STORAGEMGR): $(PYTHON3) $(CONTAINERDIR)/storagemgr/* \
                $(SCRIPTDIR)/untar-docker-image
@@ -332,7 +332,7 @@ storagemgr_clean:
 		$(FSDIR) \
 		$(IMGFSDIR)/layers
 
-ZEROTIER := $(FSDIR)/zerotier.off
+ZEROTIER := $(IMGFSDIR)/layers/zerotier.off
 zerotier: $(ZEROTIER)
 $(ZEROTIER): $(PYTHON3) $(CONTAINERDIR)/zerotier/* $(SCRIPTDIR)/untar-docker-image
 	$(SCRIPTDIR)/mkcontainer -t zerotier '$(FROM_PREFIX)' \
@@ -346,25 +346,20 @@ zerotier_clean:
 
 PHONY += fs_clean
 fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean
-	rm -rf $(FSDIR)
+	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
-SQUASHFS := $(IMGFSDIR)/layers/rootfs.sqfs
+SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs
 squashfs: $(SQUASHFS)
 $(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL)
-	@rm -rf $(IMGFSDIR)/layers/*/ $(IMGFSDIR)/layers/*.sqfs
-	for fs in $(FSDIR)/*; do \
-	    if [ -d $$fs ]; then \
-	        mkdir -p $(IMGFSDIR)/layers/`basename $$fs` ; \
-	        $(FAKEROOT) $(FSDIR)/fakeroot \
-	          mksquashfs $$fs $(IMGFSDIR)/layers/`basename $$fs`.sqfs -noappend ; \
-	    fi ; \
-	done
+	@rm -rf $(IMGFSDIR)/layers/fs.sqfs
+	mkdir -p $(IMGFSDIR)/layers/fs
+	$(FAKEROOT) $(FSDIR).fakeroot \
+	  mksquashfs $(FSDIR) $(IMGFSDIR)/layers/fs.sqfs -noappend ; \
 
 PHONY += squashfs_clean
 squashfs_clean:
-	for fs in $(IMGFSDIR)/layers/*.sqfs; do \
-	    rm -rf $${fs%.sqfs} $$fs; \
-	done
+	rm -f $(IMGFSDIR)/layers/fs.sqfs
+	rmdir $(IMGFSDIR)/layers/fs
 
 ###############
 # Image Targets

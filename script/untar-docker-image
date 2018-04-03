@@ -50,8 +50,8 @@ class SavePipe(io.RawIOBase):
         return ret
 
 if args.savetarfrags:
-    outbin = open(os.path.join(args.outdir, "%s.bin" % args.savetarfrags), "wb")
-    outoff = open(os.path.join(args.outdir, "%s.off" % args.savetarfrags), "wt")
+    outbin = open("%s.bin" % args.savetarfrags, "wb")
+    outoff = open("%s.off" % args.savetarfrags, "wt")
     off = 0
     outbincnt = 0
     tarstream = SavePipe(sys.stdin.buffer)
@@ -155,6 +155,6 @@ if args.savetarfrags:
     outoff.close()
 
 if args.savelayernames:
-    with open(os.path.join(args.outdir, args.savelayernames), "w") as l:
+    with open(args.savelayernames, "w") as l:
         for did in diffids:
             l.write("%s\n" % did)

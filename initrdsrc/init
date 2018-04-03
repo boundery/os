@@ -12,19 +12,20 @@ mount /boot
 
 # Switch to the real root.
 
+LAYSERSDIR=/boot/layers
+mount -tsquashfs $LAYSERSDIR/fs.sqfs $LAYSERSDIR/fs
+
 LAYERS=
 FILTERS="-f/dev/null"
-mount_layers() {
+add_layers() {
     name=$1
-    dir=/boot/layers
-    for i in `fgrep -v $FILTERS $dir/$name.layers`; do
-        mount -tsquashfs $dir/$i.sqfs $dir/$i
-        LAYERS=$dir/$i:$LAYERS
+    for i in `fgrep -v $FILTERS $LAYSERSDIR/$name.layers`; do
+        LAYERS=$LAYSERSDIR/fs/$i:$LAYERS
     done
-    FILTERS="$FILTERS -f$dir/$name.layers"
+    FILTERS="$FILTERS -f$LAYSERSDIR/$name.layers"
 }
 
-mount_layers rootfs
+add_layers rootfs
 # XXX debugging: add more layers
 #mount_layers python3
 #mount_layers storagemgr

@@ -35,21 +35,16 @@ echo 1 >/sys/fs/cgroup/memory/memory.use_hierarchy
 
 layers="$(cat $(ls /boot/layers/*.layers | grep -v '/rootfs.layers$') |
           sort -u)"
-for layer in $layers; do
-    if ! mountpoint -q /boot/layers/$layer; then
-        mount -tsquashfs /boot/layers/$layer.sqfs /boot/layers/$layer
-    fi
-done
 
 # Validate the links in docker images.  We may have changed image
 # contents (dead link), or added images (unreferenced layer),
 # or removed images (dead link).
 if [ -d /var/lib/docker/overlay2 ]; then
     dlayers="$(readlink /var/lib/docker/overlay2/*/diff |
-               sed -n -es,/boot/layers/,,p |
+               sed -n -es,/boot/layers/fs/,,p |
                sort -u)"
     if [ "$dlayers" != "$layers" ]; then
-        echo "Cached docker images are no longer valid, will reload images."
+        echo "Cached docker images are no longer valid, will reload images"
         (cd /var/lib/docker; ls -A | xargs -d'\n' rm -rf)
     fi
 fi
@@ -73,7 +68,7 @@ else
         name=`basename ${i%.*}`
 
         echo Creating docker image $name
-        unsplit-tar ${i%.*} /boot/layers | docker load
+        unsplit-tar ${i%.*} /boot/layers/fs | docker load
 
         # if container name has a prefix, tag it with the plain name
         prefname="$(docker images --format "{{.Repository}}" "*/$name")"
@@ -88,7 +83,7 @@ else
             if [ -h /var/lib/docker/overlay2/$CACHEID/diff ]; then continue; fi
 
             rm -rf /var/lib/docker/overlay2/$CACHEID/diff
-            ln -sf /boot/layers/$layer /var/lib/docker/overlay2/$CACHEID/diff
+            ln -sf /boot/layers/fs/$layer /var/lib/docker/overlay2/$CACHEID/diff
         done
     done
 fi
