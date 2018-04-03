@@ -42,22 +42,22 @@ vflag=0
 main() {
     parseargs "$@" || return 99
 
-    if [ "$add" != "" ]; then
+    if [ -n "$add" ]; then
         add "$add"
         return $?
     fi
 
-    if [ "$remove" != "" ]; then
+    if [ -n "$remove" ]; then
         remove "$remove"
         return $?
     fi
 
-    if [ "$unmountall" != "" ]; then
+    if [ -n "$unmountall" ]; then
         unmountall
         return $?
     fi
 
-    if [ "$initstage" != "" ]; then
+    if [ -n "$initstage" ]; then
         init "$initstage"
         return $?
     fi
@@ -113,8 +113,8 @@ parseargs() {
         esac
     fi
 
-    if [ "$add" = "" -a "$remove" = "" -a "$unmountall" = ""  -a \
-         "$initstage" = "" ]; then
+    if [ -z "$add" -a -z "$remove" -a -z "$unmountall" -a \
+         -z "$initstage" ]; then
         usage
         return 1
     fi
@@ -166,7 +166,7 @@ add() {
     fi
 
     local pvs="$(listdir "$dir" "$pv[0-9][0-9][0-9][0-9]")"
-    if [ "$pvs" = "" ]; then
+    if [ -z "$pvs" ]; then
         error "device $dname doesn't have any physical volume files"
         return 1
     fi
@@ -212,7 +212,7 @@ checkpartition() {
         return 1
     esac
     bdev=${dname%${dname#sd[a-z]}} # strip off the partition number
-    if egrep -qs "^/dname/($bdev|$dname) " /proc/1/mounts; then
+    if egrep -qs "^/dev/($bdev|$dname) " /proc/1/mounts; then
         info "$dname or $bdev is already mounted"
         return 2
     fi
@@ -385,12 +385,12 @@ init1() {
             fi
         done
         info "device $dname completed"
-        if [ "$pidfile" != "" ]; then
+        if [ -n "$pidfile" ]; then
             run rm -f "$pidfile"
         fi
         return 0
     ) &
-    if [ "$pidfile" != "" ]; then
+    if [ -n "$pidfile" ]; then
         echo "$!" >"$pidfile"
     fi
     return 0
