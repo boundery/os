@@ -171,30 +171,19 @@ add() {
         return 1
     fi
 
-    local loopdevs=""
     local pv
     for pv in $pvs; do
-        local f="$dir/$pv"
         verbose "attaching physical volume $pv"
-        local loopdev=$(losetup -f --show "$f")
+        run losetup -f "$dir/$pv"
         if [ $? -ne 0 ]; then
-            for l in loopdevs; do
-                run losetup -d "$l"
-            done
-            run umount "$mnt"
-            run rmdir "$mnt"
+            remove "$dname"
             return 1
         fi
-        loopdevs="$loopdevs $loopdev"s
     done
 
     mountlv
     if [ $? -ne 0 ]; then
-        for l in loopdevs; do
-            run losetup -d "$l"
-        done
-        run umount "$mnt"
-        rmdir "$mnt"
+        remove "$dname"
         return 1
     fi
 
@@ -236,23 +225,14 @@ mountdev() {
 }
 
 mountlv() {
-    run lvchange -ay --activationmode complete $lvname
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-    waitlv "$lvdev"
-    if [ $? -ne 0 ]; then
-        error "failed to activate logical volume $lvdname"
-        run lvchange -an $lvname
-        return 1
-    fi
+    activatelv || return $?
 
     run mkdir -p "$lvmnt"
     run mount "$lvdev" "$lvmnt"
     if [ $? -ne 0 ]; then
         error "failed to mount logical volume $lvdname on $lvmnt"
         run rmdir "$lvmnt"
-        run lvchange -an $lvname
+        deactivatelv
         return 1
     fi
 
@@ -260,9 +240,20 @@ mountlv() {
     return 0
 }
 
-waitlv() {
-    waitfile 5 "logical volume $lvdname" "$lvdev"
-    return $?
+activatelv() {
+    run lvchange -ay --activationmode complete $lvname || return $?
+    run vgmknodes
+    if [ ! -b "$lvdev" ]; then
+        error "logical volume device $lvdev not created"
+        deactivatelv
+        return 1
+    fi
+    return 0
+}
+
+deactivatelv() {
+    run lvchange -an $lvname
+    run vgmknodes
 }
 
 remove() {
@@ -281,7 +272,6 @@ remove() {
         done
     done
 
-    sleep 2     # XXX
     info "unmounting device $dname"
     run umount "$dev"
     run rmdir "$mnt"
@@ -294,7 +284,7 @@ unmountall() {
         run umount "$lvmnt"
         run rmdir "$lvmnt"
     fi
-    run lvchange -an $lvname
+    deactivatelv
     local devs="$(listdir "/mnt" "sd[a-z]*")"
     local d
     for d in $devs; do
@@ -347,7 +337,7 @@ init1() {
     local dir="$mnt/$spath"
 
     if ! checkmount "$lvdev" "$lvmnt"; then
-        # if there's a drive add() should have left it mounted
+        # if there's a drive, add() should have left it mounted
         # XXX race with add()
         if ! checkmount "$dev" "$mnt"; then
             error "no USB storage device $dname found"
@@ -431,9 +421,8 @@ mountdocker() {
 }
 
 unmountdocker() {
-    run umount "/var/lib/docker" &&
+    run umount "/var/lib/docker"
     run umount "/etc/docker"
-    return $?
 }
 
 movedocker() {

@@ -98,7 +98,7 @@ def unmountall():
         log.verbose("unmounting logical volume %s" % (vmnt))
         run(["umount", vmnt], ignoreerr = True)
         os.rmdir(vmnt)
-    run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
+    deactivatelv()
     for dev in listdir(mnt, "sd[a-z]\d+"):
         remove(dev)
     log.info("all devices unmounted")
@@ -122,9 +122,9 @@ def provision(dev, size):
             return 1
 
     if os.path.isfile(file):
+        log.error("device %s is already provisioned" % (dev))
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.error("device %s is already provisioned" % (dev))
         return 1
 
     # write in 8MB units
@@ -166,20 +166,17 @@ def provision(dev, size):
         run(["vgcreate", "vg00", loopdev])
         log.info("creating logical volume")
         run(["lvcreate", "-an", "-nlv00", "-l100%vg", "vg00"])
-        run(["lvchange", "-ay", "--activationmode", "complete", "vg00/lv00"])
-        waitlv(vdev)
+        activatelv(vdev)
     except Exception:
-        run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
+        log.error("failed to create physical volume, volume group, " +
+                  "or logical volume")
         run(["lvremove", "-y", "vg00/lv00"], ignoreerr = True)
         run(["losetup", "-d", loopdev])
         os.unlink(tmpfile)
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.error("failed to create physical volume, volume group, " +
-                  "or logical volume")
         return 1
 
-    vdev = "/dev/mapper/vg00-lv00"
     vdir = "/mnt/vg00-lv00"
     try:
         log.info("creating filesystem")
@@ -191,12 +188,12 @@ def provision(dev, size):
         run(["mkfs", "-text4", "-b4096", vdev])
         mountlv1(vdev, vdir)
     except Exception:
-        run(["lvchange", "-an", "vg00/lv00"])
+        log.error("failed to create or mount filesystem")
+        deactivatelv()
         run(["losetup", "-d", loopdev])
         os.unlink(tmpfile)
         run(["umount", mnt])
         os.rmdir(mnt)
-        log.error("failed to create or mount filesystem")
         return 1
 
     # commit
@@ -461,18 +458,13 @@ def mountdev(dev, mnt):
 
 def mountlv():
     vdev = "/dev/mapper/vg00-lv00"
-    try:
-        run(["lvchange", "-ay", "--activationmode", "complete", "vg00/lv00"])
-        waitlv(vdev)
-    except Exception:
-        log.error("failed to activate logical volume")
-        raise
+    activatelv(vdev)
 
     vdir = "/mnt/vg00-lv00"
     try:
         mountlv1(vdev, vdir)
     except Exception:
-        run(["lvchange", "-an", "vg00/lv00"])
+        deactivatelv()
         raise
 
 def mountlv1(vdev, vdir):
@@ -485,17 +477,22 @@ def mountlv1(vdev, vdir):
         raise
     log.info("logical volume %s mounted on %s" % (vdev, vdir))
 
-def waitlv(vdev, timeout = 5):
-    n = timeout * 2
-    while not os.path.exists(vdev):
-        if n <= 0:
-            log.error("timed out waiting for logical volume %s" % (vdev))
-            raise RuntimeError()
-        # print only every second and don't print the first one
-        if n < timeout * 2 and n % 2 == 0:
-            log.info("waiting for logical volume %s...%d" % (vdev, n / 2))
-        n -= 1
-        time.sleep(0.5)
+def activatelv(vdev):
+    try:
+        run(["lvchange", "-ay", "--activationmode", "complete", "vg00/lv00"])
+        run(["vgmknodes"])
+    except Exception:
+        log.error("failed to activate logical volume")
+        deactivatelv()
+        raise
+    if not os.path.exists(vdev):
+        log.error("logical volume device %s not created" % (vdev))
+        deactivatelv()
+        raise RuntimeError()
+
+def deactivatelv():
+    run(["lvchange", "-an", "vg00/lv00"], ignoreerr = True)
+    run(["vgmknodes"], ignoreerr = True)
 
 def remove(dev):
     mnt = "/mnt/" + dev
@@ -514,7 +511,6 @@ def remove(dev):
             except Exception:
                 log.error("failed remove loopback device %s "
                           "for physical volume " % (loopdev, pv))
-        time.sleep(2) # XXX
     log.info("unmounting device %s" % (dev))
     run(["umount", mnt], ignoreerr = True)
     os.rmdir(mnt)
