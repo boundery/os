@@ -29,7 +29,7 @@ add=
 remove=
 unmountall=
 initstage=
-pidfile=
+pidfile=/run/storaged.pid
 dflag=
 qflag=
 vflag=0
@@ -315,6 +315,12 @@ init0() {
     # and better error message.
     #
     # Return nonzero to tell init to use tmpfs storage for docker.
+
+    # XXX kludge for the pc image
+    if egrep -qs "/dev/sda " /proc/1/mounts; then
+        verbose "/dev/sda already mounted"
+        return 1
+    fi
 
     waitfile 5 "device $dname" "$dev" || return $?
     waitmount 30 "device $dname" "$dev" "$mnt" || return $?

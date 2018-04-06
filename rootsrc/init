@@ -32,7 +32,7 @@ mdev -s &
 # Wait for storage to be mounted, if already provisioned
 storaged -i0 -v
 if [ $? -ne 0 ]; then
-    echo No USB storage, starting docker on tmpfs
+    echo No USB storage provisioned, starting docker on tmpfs
     dockerontmpfs=1
     mount /etc/docker
     mount -osize=256M /var/lib/docker
@@ -45,9 +45,9 @@ if [ $dockerontmpfs ]; then
 fi
 
 # Provision and expand storage if needed
-storaged -i1 -p/run/storaged.pid -v
+storaged -i1 -v
 if [ $? -ne 0 ]; then
-    echo storaged -i1 failed
+    echo No USB storage available, continuing without persistent storage
     # XXX sleep forever, don't bother going on?
 fi
 
