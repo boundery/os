@@ -215,7 +215,8 @@ mountdev() {
 
     run fsck -fy "$devfile"
     run mkdir -p "$mnt"
-    run mount "$devfile" "$mnt"
+    # while this is usually a fatfs, it doesn't have to be
+    run mount -onoexec,nosuid,nodev "$devfile" "$mnt"
     if [ $? -ne 0 ]; then
         run rmdir "$mnt"
         error "failed to mount $dname on $mnt"
@@ -228,7 +229,7 @@ mountlv() {
     activatelv || return $?
 
     run mkdir -p "$lvmnt"
-    run mount "$lvdev" "$lvmnt"
+    run mount -onosuid "$lvdev" "$lvmnt"
     if [ $? -ne 0 ]; then
         error "failed to mount logical volume $lvdname on $lvmnt"
         run rmdir "$lvmnt"

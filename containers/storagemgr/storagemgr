@@ -470,7 +470,7 @@ def mountlv():
 def mountlv1(vdev, vdir):
     run(["mkdir", "-p", vdir])
     try:
-        run(["mount", "-onoexec,nosuid,nodev", vdev, vdir])
+        run(["mount", "-onosuid", vdev, vdir])
     except Exception:
         log.error("failed to mount logical volume %s on %s" % (vdev, vdir))
         os.rmdir(vdir)
