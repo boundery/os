@@ -229,7 +229,7 @@ mountlv() {
     activatelv || return $?
 
     run mkdir -p "$lvmnt"
-    run mount -onosuid "$lvdev" "$lvmnt"
+    run mount -onoexec,nosuid,nodev "$lvdev" "$lvmnt"
     if [ $? -ne 0 ]; then
         error "failed to mount logical volume $lvdname on $lvmnt"
         run rmdir "$lvmnt"
