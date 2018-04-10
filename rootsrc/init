@@ -18,7 +18,11 @@ klogd -c5
 
 echo 5 >/proc/sys/kernel/panic
 
-modprobe brcmfmac
+while read line; do
+    line="${line%%#*}"
+    [ -z "$line" ] || modprobe $line
+done </etc/modules
+
 (netd &)
 
 # Bring up mdev to run storage manager

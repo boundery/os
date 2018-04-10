@@ -4,11 +4,11 @@ FROM ${FROM_PREFIX}debian:stretch-slim
 
 COPY *.pub /keys/
 
-ARG FROM_PREFIX
+ARG ARCH
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends gnupg apt-transport-https ca-certificates \
-    && if [ "$FROM_PREFIX" = arm32v7/ ]; then \
+    && if [ "$ARCH" = armhf ]; then \
            apt-key add /keys/raspbian.pub \
         && echo 'deb http://archive.raspberrypi.org/debian/ stretch main' \
                 >/etc/apt/sources.list.d/raspbian.list \
@@ -44,6 +44,7 @@ RUN    apt-get update \
 
 COPY init /sbin/
 COPY fstab /etc/
+COPY modules.${ARCH} /etc/modules
 COPY mdev.conf /etc/
 COPY wpa_supplicant.conf /usr/local/etc
 COPY mkwpaconf /usr/local/sbin

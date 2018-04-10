@@ -2,13 +2,17 @@
 
 progname="${0##*/}"
 
+buildargs=
 cflag=
 rflag=
 tflag=
 
 main() {
-    while getopts crt opt; do
+    while getopts a:crt opt; do
         case $opt in
+	(a)
+            buildargs="$buildargs --build-arg $OPTARG"
+            ;;
         (c)
             cflag=1
             ;;
@@ -37,9 +41,10 @@ main() {
 usage() {
     {
     echo "Usage:"
-    echo "  $progname [-rt] name from-prefix src-dir"
-    echo "                    fs-dir layers-dir docker-build-proxy"
+    echo "  $progname [-a name=value] [-rt] name from-prefix src-dir"
+    echo "            fs-dir layers-dir docker-build-proxy"
     echo "      build container"
+    echo "          -a   pass --build-arg name=value to docker build"
     echo "          -r   rename layer from hash to container name"
     echo "          -t   save tar fragments"
     echo "  $progname -c name from-prefix fs-dir layers-dir"
@@ -73,7 +78,7 @@ build () {
     fi
 
     echo "$progname: Building container $from_prefix$name"
-    docker build $docker_build_proxy \
+    docker build $docker_build_proxy $buildargs \
            --build-arg FROM_PREFIX=$from_prefix --squash \
            --force-rm=true -t $from_prefix$name \
            $srcdir

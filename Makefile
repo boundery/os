@@ -276,7 +276,8 @@ initrd_clean:
 ROOTFS := $(IMGFSDIR)/layers/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(SCRIPTDIR)/untar-docker-image
-	$(SCRIPTDIR)/mkcontainer -r rootfs '$(FROM_PREFIX)' $(ROOTSRCDIR) \
+	$(SCRIPTDIR)/mkcontainer -r -aARCH=$(ARCH) \
+		rootfs '$(FROM_PREFIX)' $(ROOTSRCDIR) \
 		$(FSDIR) \
 		$(IMGFSDIR)/layers \
 		'$(DOCKER_BUILD_PROXY)'
