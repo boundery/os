@@ -429,3 +429,5 @@ endif
 PHONY += qemu-run
 
 .PHONY: $(PHONY)
+
+print-%: ; @echo $*=$($*)
