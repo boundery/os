@@ -9,7 +9,6 @@ RUN    apt-key add /zt-gpg-key \
     && apt-get install -y zerotier-one \
     && rm -rf /var/lib/apt/lists/*
 
-COPY zerotier_allow.py /
-COPY start.sh /
+COPY start zerotier_allow.py /
 
-CMD ["bash", "/start.sh"]
+CMD ["bash", "/start"]
