@@ -100,7 +100,9 @@ def walktree(t):
     s = set()
     for f in os.scandir(t):
         st = f.stat(follow_symlinks = False)
-        s.add((f.name, st.st_mode, st.st_dev, st.st_nlink, st.st_uid, st.st_gid, st.st_size))
+        #Only check things that don't need fakeroot to be right, otherwise old
+        # diffids with no corresponding fakeroot file will blow up.
+        s.add((f.name, st.st_mode, st.st_nlink, st.st_size))
         if f.is_dir(follow_symlinks = False):
             s |= walktree(f.path)
     return s
@@ -118,6 +120,8 @@ for tinfo in tar:
         innertar = tarfile.open(fileobj=hashwrapper, mode="r|")
 
         layerpath = os.path.join(args.outdir, os.path.dirname(name))
+        if os.path.isdir(layerpath):
+            shutil.rmtree(layerpath)
         os.mkdir(layerpath)
         print("Extracting to %s" % layerpath)
         offsets = extract_all(innertar, layerpath, tinfo.offset_data)
@@ -128,12 +132,11 @@ for tinfo in tar:
 
         diffidpath = os.path.join(args.outdir, hashwrapper.hexdigest())
         if os.path.isdir(diffidpath):
-            print("%s already exists, skipping" % diffidpath)
+            print("%s already exists, deleting" % diffidpath)
             assert(walktree(diffidpath) == walktree(layerpath))
-            shutil.rmtree(layerpath)
-        else:
-            print("Moving to %s" % diffidpath)
-            os.rename(layerpath, diffidpath)
+            shutil.rmtree(diffidpath)
+        print("Moving to %s" % diffidpath)
+        os.rename(layerpath, diffidpath)
 
         #We don't write the offsets immediately, since we don't know the name
         # then.
