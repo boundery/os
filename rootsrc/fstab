@@ -7,5 +7,5 @@ tmpfs            /run            tmpfs     size=512k
 tmpfs            /mnt            tmpfs     size=16k,shared
 tmpfs            /tmp            tmpfs     size=512k
 cgroup           /sys/fs/cgroup  tmpfs     size=16k,noauto,mode=0755
-tmpfs            /var/lib/docker tmpfs     size=1024k,noauto
+tmpfs            /var/lib/docker tmpfs     size=4m,noauto
 tmpfs            /etc/docker     tmpfs     size=16k,noauto
