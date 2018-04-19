@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+
+import sys, os, signal
+import json
+from mako.template import Template
+
+args = json.load(sys.stdin)
+
+with open("/etc/haproxy/haproxy.cfg", "w") as cfgfile:
+     tmpl = Template(filename="/haproxy.mako")
+     cfgfile.write(tmpl.render(servers = args))
+
+#Tell start script to have haproxy to reload its config
+os.kill(int(open("/run/haproxy.pid").read()), signal.SIGUSR2)

@@ -344,8 +344,20 @@ zerotier_clean:
 	$(SCRIPTDIR)/mkcontainer -c zerotier '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
 
+HAPROXY := $(IMGFSDIR)/layers/haproxy.off
+haproxy: $(HAPROXY)
+$(HAPROXY): $(PYTHON3) $(CONTAINERDIR)/haproxy/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t haproxy '$(FROM_PREFIX)' \
+	  $(CONTAINERDIR)/haproxy $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(HAPROXY)
+
+PHONY += haproxy_clean
+haproxy_clean:
+	$(SCRIPTDIR)/mkcontainer -c haproxy '$(FROM_PREFIX)' \
+	  $(FSDIR) $(IMGFSDIR)/layers
+
 PHONY += fs_clean
-fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean
+fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean haproxy_clean
 	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs

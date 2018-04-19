@@ -1,0 +1,14 @@
+#!/bin/sh
+
+mkdir -p /run/haproxy
+chmod 2775 /run/haproxy
+
+trap 'echo Reloading config.' USR2
+echo "$$" > /run/haproxy.pid
+
+while [ ! -e /run/haproxy.stop ]; do
+    #The first time this runs, there is no haproxy process, fortunately
+    # "-sf" does nothing if the passed in pid is empty.
+    /usr/sbin/haproxy -db -f /etc/haproxy/haproxy.cfg -sf `pidof haproxy` &
+    wait #SIGUSR2 will interrupt this wait early.
+done
