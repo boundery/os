@@ -173,6 +173,8 @@ endif
 KERNEL_MOD_INSTALL := $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
 kernel_mod_install: $(KERNEL_MOD_INSTALL)
 $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
+	$(FAKEROOT) -s $(FSDIR).fakeroot \
+		    rm -rf $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)
 	( cd $(KERNELDIR); \
 	  $(FAKEROOT) -s $(FSDIR).fakeroot \
 	  $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
