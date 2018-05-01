@@ -27,7 +27,7 @@ elif [ "$1" = -s ]; then
     fi
 fi
 
-exec docker run --rm --privileged \
+exec docker run --name=storagemgr --rm --privileged --network=none \
     $mounts \
     -e ACTION="$ACTION" \
     -e SUBSYSTEM="$SUBSYSTEM" \
