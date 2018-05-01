@@ -358,8 +358,25 @@ haproxy_clean:
 	$(SCRIPTDIR)/mkcontainer -c haproxy '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
 
+DNSD := $(IMGFSDIR)/layers/dnsd.off
+dnsd: $(DNSD)
+$(DNSD): $(PYTHON3) $(CONTAINERDIR)/dnsd/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t dnsd '$(FROM_PREFIX)' \
+		$(CONTAINERDIR)/dnsd \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers \
+		'$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(DNSD)
+
+PHONY += dnsd_clean
+dnsd_clean:
+	$(SCRIPTDIR)/mkcontainer -c dnsd '$(FROM_PREFIX)' \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers
+
 PHONY += fs_clean
-fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean haproxy_clean
+fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean \
+          haproxy_clean dnsd_clean
 	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs

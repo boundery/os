@@ -52,5 +52,6 @@ COPY startdocker /usr/local/sbin
 COPY netd /usr/local/sbin
 COPY storaged /usr/local/sbin
 COPY smdocker /usr/local/sbin
+COPY startdnsd /usr/local/sbin
 COPY unsplit-tar /usr/local/sbin
 COPY sethostname /etc/dhcp/dhclient-exit-hooks.d

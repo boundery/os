@@ -1,0 +1,176 @@
+#!/usr/bin/python3
+
+import argparse
+import dnslib as dl
+import dnslib.server as ds
+import json
+import socket
+import time
+import syslog
+import traceback
+
+opts = None
+log = None
+
+def main():
+    parse_args()
+
+    global log
+    log = Log("dnsd", opts)
+
+    run()
+
+    return 0
+
+def parse_args(args = None):
+    a = argparse.ArgumentParser()
+    a.add_argument("-f", "--file",
+                   action = "store", default = "/etc/dnsd/zones.json",
+                   help = "data file name")
+    a.add_argument("-d", "--daemon",
+                   action = "store_true",
+                   help = "daemon mode, log to syslog")
+    a.add_argument("-v", "--verbose",
+                   action = "count", default = 0,
+                   help = "verbose, log more")
+
+    global opts
+    opts = a.parse_args(args)
+
+def run():
+    with open(opts.file) as f:
+        zones = json.load(f)
+        log.verbose2(json.dumps(zones, indent = 4))
+    servers = []
+    logger = ds.DNSLogger("request,-request") # don't log
+    for addr, port, origin, ttl, data in zones:
+        # XXX this is bogus
+        if addr == "*":
+            addr = socket.gethostbyname(socket.gethostname())
+        origin = dl.DNSLabel(origin.lower())
+        zone = {}
+        for name, jrrs in data.items():
+            rrs = []
+            for jrr in jrrs:
+                if jrr[0] == "SOA":
+                    rr = (dl.QTYPE.SOA,
+                          dl.SOA(fqdn(jrr[1], origin),
+                                 fqdn(jrr[2], origin),
+                                 jrr[3]))
+                elif jrr[0] == "NS":
+                    rr = (dl.QTYPE.NS, dl.NS(fqdn(jrr[1], origin)))
+                elif jrr[0] == "A":
+                    rr = (dl.QTYPE.A, dl.A(jrr[1]))
+                elif jrr[0] == "CNAME":
+                    rr = (dl.QTYPE.CNAME, dl.CNAME(fqdn(jrr[1], origin)))
+                elif jrr[0] == "MX":
+                    rr = (dl.QTYPE.MX, dl.MX(fqdn(jrr[1], origin)))
+                elif jrr[0] == "TXT":
+                    rr = (dl.QTYPE.TXT, dl.TXT(jrr[1]))
+                elif jrr[0] == "PTR":
+                    rr = (dl.QTYPE.PTR, dl.PTR(fqdn(jrr[1], origin)))
+                else:
+                    raise RuntimeError("unknown RR type %s" % (jrr[0]))
+                rrs.append(rr)
+            zone[fqdn(name, origin)] = rrs
+        log.info("listening on %s port %s zone %s" % (addr, port, origin))
+        resolver = Resolver(ttl, zone)
+        udp = ds.DNSServer(resolver, address = addr, port = port,
+                           tcp = False, logger = logger)
+        udp.start_thread()
+        tcp = ds.DNSServer(resolver, address = addr, port = port,
+                           tcp = True, logger = logger)
+        tcp.start_thread()
+        servers.append((resolver, udp, tcp))
+    del zones
+    while True:
+        time.sleep(3600)
+
+def fqdn(name, origin):
+    if name == "@":
+        return dl.DNSLabel(origin)
+    if name[-1] == ".":
+        return dl.DNSLabel(name)
+    return origin.add(name.lower())
+
+class Resolver(ds.BaseResolver):
+    def __init__(self, ttl, zone):
+        self.ttl = ttl
+        self.zone = zone
+
+    def resolve(self, request, handler):
+        log.verbose("request:\n%s" % (request))
+        reply = request.reply()
+        results = self.zone.get(dl.DNSLabel(str(request.q.qname).lower()),
+                                None)
+        if results is None:
+            reply.header.rcode = dl.RCODE.NXDOMAIN
+        else:
+            qtype = request.q.qtype
+            for r in results:
+                if qtype != dl.QTYPE.ANY and \
+                   qtype != r[0] and \
+                   r[0] != dl.QTYPE.CNAME:
+                    continue
+                rr = dl.RR(rname = request.q.qname,
+                           rtype = r[0],
+                           rclass = request.q.qclass,
+                           ttl = self.ttl,
+                           rdata = r[1])
+                reply.add_answer(rr)
+                # additional processing
+                if r[0] == dl.QTYPE.NS or \
+                   r[0] == dl.QTYPE.MX or \
+                   r[0] == dl.QTYPE.CNAME and qtype == dl.QTYPE.A:
+                    for s in self.zone.get(r[1].label, []):
+                        if s[0] == dl.QTYPE.A:
+                            ss = dl.RR(rname = r[1].label,
+                                       rtype = s[0],
+                                       rclass = request.q.qclass,
+                                       ttl = self.ttl,
+                                       rdata = s[1])
+                            if r[0] == dl.QTYPE.CNAME:
+                                reply.add_answer(ss)
+                            else:
+                                reply.add_ar(ss)
+        log.verbose("reply:\n%s" % (reply))
+        return reply
+
+class Log(object):
+    def __init__(self, name, opts):
+        self.daemon = opts.daemon
+        self.level = opts.verbose
+        if self.daemon:
+            syslog.openlog(name, 0, syslog.LOG_DAEMON)
+    def _log(self, priority, msg):
+        for line in msg.split("\n"):
+            if line == "":
+                continue
+            if self.daemon:
+                syslog.syslog(priority, line)
+            else:
+                print(line)
+    def info(self, msg):
+        self._log(syslog.LOG_INFO, msg)
+    def warning(self, msg):
+        self._log(syslog.LOG_WARNING, msg)
+    def error(self, msg):
+        self._log(syslog.LOG_ERR, msg)
+    def verbose(self, msg):
+        if self.level > 0:
+            self._log(syslog.LOG_INFO, msg)
+    def verbose2(self, msg):
+        if self.level > 1:
+            self._log(syslog.LOG_INFO, msg)
+
+if __name__ == "__main__":
+    try:
+        exit(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        if log:
+            log.error(traceback.format_exc())
+        else:
+            traceback.print_exc()
+    exit(1)
