@@ -14,7 +14,7 @@ pv0="${pv}0000"
 lvname="$vg/$lv"
 lvdname="$vg-$lv"
 lvdev="/dev/mapper/$lvdname"
-lvmnt="/mnt/$lvdname"
+lvmnt="/mnt/vol00"
 spath="prjx/storage"
 
 #

@@ -93,7 +93,7 @@ def parse_args(args = None):
 
 def unmountall():
     mnt = "/mnt"
-    vmnt = mnt + "/vg00-lv00"
+    vmnt = mnt + "/vol00"
     if os.path.isdir(vmnt):
         log.verbose("unmounting logical volume %s" % (vmnt))
         run(["umount", vmnt], ignoreerr = True)
@@ -177,7 +177,7 @@ def provision(dev, size):
         os.rmdir(mnt)
         return 1
 
-    vdir = "/mnt/vg00-lv00"
+    vdir = "/mnt/vol00"
     try:
         log.info("creating filesystem")
         #
@@ -205,7 +205,7 @@ def grow(dev, size, nfiles, minfree):
     mnt = "/mnt/" + dev
     dir = mnt + "/prjx/storage"
     vdev = "/dev/mapper/vg00-lv00"
-    vdir = "/mnt/vg00-lv00"
+    vdir = "/mnt/vol00"
 
     # do everything in 8MB units
     buf, bufsize, goalsize = makebuffer(size, 8)
@@ -460,7 +460,7 @@ def mountlv():
     vdev = "/dev/mapper/vg00-lv00"
     activatelv(vdev)
 
-    vdir = "/mnt/vg00-lv00"
+    vdir = "/mnt/vol00"
     try:
         mountlv1(vdev, vdir)
     except Exception:
