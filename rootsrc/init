@@ -90,6 +90,9 @@ docker network create --subnet=172.18.0.0/22 --ip-range=172.18.0.0/23 \
 echo Starting dnsd
 startdnsd -d
 
+#Start the haproxy system container
+docker run -d --name haproxy haproxy
+
 # XXX eventually this will be some form of getty
 setsid -cw bash -l
 
