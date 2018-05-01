@@ -8,4 +8,4 @@ RUN    apt-get update \
 
 COPY start config haproxy.mako /
 
-CMD ["bash", "/start"]
+CMD ["/start"]

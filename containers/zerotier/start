@@ -7,6 +7,6 @@ fi
 
 /usr/sbin/zerotier-one &
 
-python3 /zerotier_allow.py private
+/zerotier_allow.py private
 
 wait

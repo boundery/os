@@ -11,4 +11,4 @@ RUN    apt-key add /zt-gpg-key \
 
 COPY start zerotier_allow.py /
 
-CMD ["bash", "/start"]
+CMD ["/start"]
