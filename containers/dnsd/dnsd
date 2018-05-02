@@ -4,6 +4,7 @@ import argparse
 import dnslib as dl
 import dnslib.server as ds
 import json
+import urllib.request
 import socket
 import time
 import syslog
@@ -41,11 +42,12 @@ def run():
     with open(opts.file) as f:
         zones = json.load(f)
         log.verbose2(json.dumps(zones, indent = 4))
+    extaddr = getextaddr()
     servers = []
     logger = ds.DNSLogger("request,-request") # don't log
     for addr, port, origin, ttl, data in zones:
-        # XXX this is bogus
         if addr == "*":
+            # XXX this is bogus
             addr = socket.gethostbyname(socket.gethostname())
         origin = dl.DNSLabel(origin.lower())
         zone = {}
@@ -60,7 +62,8 @@ def run():
                 elif jrr[0] == "NS":
                     rr = (dl.QTYPE.NS, dl.NS(fqdn(jrr[1], origin)))
                 elif jrr[0] == "A":
-                    rr = (dl.QTYPE.A, dl.A(jrr[1]))
+                    a = extaddr if jrr[1] == "**" else jrr[1]
+                    rr = (dl.QTYPE.A, dl.A(a))
                 elif jrr[0] == "CNAME":
                     rr = (dl.QTYPE.CNAME, dl.CNAME(fqdn(jrr[1], origin)))
                 elif jrr[0] == "MX":
@@ -85,6 +88,12 @@ def run():
     del zones
     while True:
         time.sleep(3600)
+
+def getextaddr():
+    url = urllib.request.urlopen("http://www.ewxyzzy.net/cgi-bin/addr")
+    addr = url.read().decode("us-ascii").strip()
+    url.close()
+    return addr
 
 def fqdn(name, origin):
     if name == "@":

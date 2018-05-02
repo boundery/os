@@ -34,11 +34,11 @@ if ! mountpoint -q "$storage"; then
     exit 1
 fi
 
-dir="$storage/dnsd/etc/dnsd"
-if [ ! -d "$dir" ]; then
-    mkdir -p "$dir"
+zonefile="$storage/dnsd/etc/dnsd/zones.json"
+if [ ! -f "$zonefile" ]; then
+    mkdir -p "${zonefile%/*}"
     # XXX this is just for testing
-    cat >"$dir/zones.json" <<'EOF'
+    cat >"$zonefile" <<'EOF'
 [
     ["172.18.0.2", 53, "i.example.com", 3600, {
         "@": [
@@ -52,9 +52,9 @@ if [ ! -d "$dir" ]; then
         "@": [
             ["SOA", "ns", "hostmaster", [2018050100, 3600, 300, 3600000, 1]],
             ["NS", "ns"],
-            ["A", "0.0.0.0"]
+            ["A", "**"]
         ],
-        "ns": [ ["A", "0.0.0.0"] ]
+        "ns": [ ["A", "**"] ]
     }]
 ]
 EOF
