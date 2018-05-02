@@ -34,9 +34,10 @@ if ! mountpoint -q "$storage"; then
     exit 1
 fi
 
-zonefile="$storage/dnsd/etc/dnsd/zones.json"
+zonedir="$storage/dnsd/etc/dnsd"
+zonefile="$zonedir/zones.json"
 if [ ! -f "$zonefile" ]; then
-    mkdir -p "${zonefile%/*}"
+    mkdir -p "$zonedir"
     # XXX this is just for testing
     cat >"$zonefile" <<'EOF'
 [
@@ -59,7 +60,7 @@ if [ ! -f "$zonefile" ]; then
 ]
 EOF
 fi
-mounts="$mounts --mount=type=bind,src=$dir,dst=/etc/dnsd"
+mounts="$mounts --mount=type=bind,src=$zonedir,dst=/etc/dnsd"
 
 docker container create \
     --name=dnsd --rm $createargs $mounts \
