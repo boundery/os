@@ -49,8 +49,7 @@ def run():
         jzones = json.load(f)
         log.verbose2(json.dumps(jzones, indent = 4))
 
-    intaddr = getintaddr()
-    extaddr = getextaddr()
+    intaddr, extaddr, privaddr = getaddrs()
 
     for addr, port, origin, ttl, data in jzones:
         zone = Zone(origin, ttl, data, addr, port, intaddr, extaddr)
@@ -60,16 +59,27 @@ def run():
     for zone in zones.values():
         zone.start()
 
-    ctrl = CtrlServer((intaddr, opts.port))
+    ctrl = CtrlServer((privaddr, opts.port))
     ctrl.start()
 
-def getintaddr():
+def getaddrs():
     # XXX this is bogus
-    return socket.gethostbyname(socket.gethostname())
+    addrs = socket.getaddrinfo(socket.gethostname(), 0,
+                               socket.AF_INET, socket.SOCK_STREAM)
+    assert len(addrs) == 2
+    if addrs[0][4][0].startswith("172.18.0."):
+        privaddr = addrs[0][4][0]
+        intaddr = addrs[1][4][0]
+    else:
+        assert addrs[1][4][0].startswith("172.18.0.")
+        privaddr = addrs[1][4][0]
+        intaddr = addrs[0][4][0]
 
-def getextaddr():
+    # XXX temporary
     r = requests.get("http://www.ewxyzzy.net/cgi-bin/addr")
-    return r.text.strip()
+    extaddr = r.text.strip()
+
+    return intaddr, extaddr, privaddr
 
 class Zone(object):
     logger = ds.DNSLogger("request,-request") # don't log
@@ -81,9 +91,7 @@ class Zone(object):
         self.ttl = ttl
         self.intaddr = intaddr
         self.extaddr = extaddr
-        if servaddr == "*":
-            servaddr = intaddr
-        self.servaddr = servaddr
+        self.servaddr = self.modaddr(servaddr)
         self.servport = servport
         self.lock = threading.Lock()
         self.rds = {}
@@ -155,8 +163,7 @@ class Zone(object):
         if jtype == "ns":
             return (dl.QTYPE.NS, dl.NS(self.fqdn(jvalue)))
         if jtype == "a":
-            a = self.extaddr if jvalue == "**" else jvalue
-            return (dl.QTYPE.A, dl.A(a))
+            return (dl.QTYPE.A, dl.A(self.modaddr(jvalue)))
         if jtype == "cname":
             return (dl.QTYPE.CNAME, dl.CNAME(self.fqdn(jvalue)))
         if jtype == "mx":
@@ -181,6 +188,13 @@ class Zone(object):
 
     def mklabel(name):
         return dl.DNSLabel(name.lower())
+
+    def modaddr(self, addr):
+        if addr == "*":
+            return self.intaddr
+        if addr == "**":
+            return self.extaddr
+        return addr
 
 class Resolver(ds.BaseResolver):
     def __init__(self, zone):
