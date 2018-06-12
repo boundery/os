@@ -34,6 +34,9 @@ def parse_args(args = None):
     a.add_argument("-p", "--port", type = int,
                    action = "store", default = 54,
                    help = "control socket port number")
+    a.add_argument("-a", "--addr",
+                   action = "store", default = None,
+                   help = "listen address (for debugging only)")
     a.add_argument("-d", "--daemon",
                    action = "store_true",
                    help = "daemon mode, log to syslog")
@@ -63,6 +66,9 @@ def run():
     ctrl.start()
 
 def getaddrs():
+    if opts.addr is not None:
+        # XXX only good for debugging
+        return opts.addr, opts.addr, opts.addr
     # XXX this is bogus
     addrs = socket.getaddrinfo(socket.gethostname(), 0,
                                socket.AF_INET, socket.SOCK_STREAM)
@@ -227,18 +233,18 @@ class Resolver(ds.BaseResolver):
         return reply
 
     def add_answer(self, reply, additional, name, level = 0):
-	#
-	# The basic idea is to return all records that match the query.
-	# Some complications are ANY queries, following CNAME, and
-	# keeping track of names to put in the additional section.
-	# Not all features are supported, like subdomain referral.
-	#
+        #
+        # The basic idea is to return all records that match the query.
+        # Some complications are ANY queries, following CNAME, and
+        # keeping track of names to put in the additional section.
+        # Not all features are supported, like subdomain referral.
+        #
         if level > 10:
             raise RuntimeError("CNAME loop in resolving %s" %
                                (str(reply.q.qname)))
         rds = self.zone.get(Zone.mklabel(str(name)), None)
         if rds is None:
-	    if level > 0:
+            if level > 0:
                 # not an error if we're just following CNAME
                 reply.header.rcode = dl.RCODE.NXDOMAIN
             return
