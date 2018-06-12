@@ -153,25 +153,25 @@ class Zone(object):
 
     def mkrd(self, jtype, jvalue):
         jtype = jtype.lower()
+        if type(jvalue) is not list:
+            jvalue = (jvalue)
         if jtype == "soa":
             return (dl.QTYPE.SOA,
                     dl.SOA(self.fqdn(jvalue[0]),
                            self.fqdn(jvalue[1]),
                            jvalue[2]))
-        if type(jvalue) is list:
-            jvalue = jvalue[0]
         if jtype == "ns":
-            return (dl.QTYPE.NS, dl.NS(self.fqdn(jvalue)))
+            return (dl.QTYPE.NS, dl.NS(self.fqdn(jvalue[0])))
         if jtype == "a":
-            return (dl.QTYPE.A, dl.A(self.modaddr(jvalue)))
+            return (dl.QTYPE.A, dl.A(self.modaddr(jvalue[0])))
         if jtype == "cname":
-            return (dl.QTYPE.CNAME, dl.CNAME(self.fqdn(jvalue)))
+            return (dl.QTYPE.CNAME, dl.CNAME(self.fqdn(jvalue[0])))
         if jtype == "mx":
-            return (dl.QTYPE.MX, dl.MX(self.fqdn(jvalue)))
+            return (dl.QTYPE.MX, dl.MX(self.fqdn(jvalue[0]), jvalue[1]))
         if jtype == "txt":
-            return (dl.QTYPE.TXT, dl.TXT(jvalue))
+            return (dl.QTYPE.TXT, dl.TXT(jvalue[0]))
         if jtype == "ptr":
-            return (dl.QTYPE.PTR, dl.PTR(self.fqdn(jvalue)))
+            return (dl.QTYPE.PTR, dl.PTR(self.fqdn(jvalue[0])))
 
         return None
 
@@ -212,40 +212,76 @@ class Resolver(ds.BaseResolver):
         return reply
 
     def resolve1(self, request):
-        reply = request.reply()
+        reply = request.reply(ra = 0, aa = 1)
+        if request.q.qtype == dl.QTYPE.AXFR:
+            reply.header.rcode = dl.RCODE.REFUSED
+            return reply
         with self.zone.lock:
-            rds = self.zone.get(Zone.mklabel(str(request.q.qname)), None)
-            if rds is None:
-                reply.header.rcode = dl.RCODE.NXDOMAIN
-            else:
-                qtype = request.q.qtype
-                for r in rds:
-                    if qtype != dl.QTYPE.ANY and \
-                       qtype != r[0] and \
-                       r[0] != dl.QTYPE.CNAME:
-                        continue
-                    rr = dl.RR(rname = request.q.qname,
-                               rtype = r[0],
-                               rclass = request.q.qclass,
-                               ttl = self.zone.ttl,
-                               rdata = r[1])
-                    reply.add_answer(rr)
-                    # additional processing
-                    if r[0] == dl.QTYPE.NS or \
-                       r[0] == dl.QTYPE.MX or \
-                       r[0] == dl.QTYPE.CNAME and qtype == dl.QTYPE.A:
-                        for s in self.zone.get(r[1].label, []):
-                            if s[0] == dl.QTYPE.A:
-                                ss = dl.RR(rname = r[1].label,
-                                           rtype = s[0],
-                                           rclass = request.q.qclass,
-                                           ttl = self.zone.ttl,
-                                           rdata = s[1])
-                                if r[0] == dl.QTYPE.CNAME:
-                                    reply.add_answer(ss)
-                                else:
-                                    reply.add_ar(ss)
+            additional = set()
+            if request.q.qclass == dl.CLASS.IN:
+                self.add_answer(reply, additional, request.q.qname)
+            self.add_authority(reply, additional)
+            # additional processing
+            for name in additional:
+                self.add_additional(reply, name, dl.QTYPE.A)
         return reply
+
+    def add_answer(self, reply, additional, name, level = 0):
+	#
+	# The basic idea is to return all records that match the query.
+	# Some complications are ANY queries, following CNAME, and
+	# keeping track of names to put in the additional section.
+	# Not all features are supported, like subdomain referral.
+	#
+        if level > 10:
+            raise RuntimeError("CNAME loop in resolving %s" %
+                               (str(reply.q.qname)))
+        rds = self.zone.get(Zone.mklabel(str(name)), None)
+        if rds is None:
+	    if level > 0:
+                # not an error if we're just following CNAME
+                reply.header.rcode = dl.RCODE.NXDOMAIN
+            return
+        qtype = reply.q.qtype
+        for r in rds:
+            if (qtype != dl.QTYPE.ANY and
+                qtype != r[0] and
+                r[0] != dl.QTYPE.CNAME):
+                continue
+            rr = dl.RR(rname = name,
+                       rtype = r[0],
+                       rclass = reply.q.qclass,
+                       ttl = self.zone.ttl,
+                       rdata = r[1])
+            reply.add_answer(rr)
+            if (r[0] == dl.QTYPE.CNAME and
+                qtype != dl.QTYPE.CNAME and
+                qtype != dl.QTYPE.ANY):
+                self.add_answer(reply, additional, r[1].label, level + 1)
+            elif r[0] == dl.QTYPE.NS or r[0] == dl.QTYPE.MX:
+                additional |= {r[1].label}
+
+    def add_authority(self, reply, additional):
+        name = self.zone.origin
+        for r in self.zone.get(name, []):
+            if r[0] == dl.QTYPE.NS:
+                rr = dl.RR(rname = name,
+                           rtype = r[0],
+                           rclass = reply.q.qclass,
+                           ttl = self.zone.ttl,
+                           rdata = r[1])
+                reply.add_auth(rr)
+                additional |= {r[1].label}
+
+    def add_additional(self, reply, name, type):
+        for r in self.zone.get(name, []):
+            if r[0] == type:
+                rr = dl.RR(rname = name,
+                           rtype = r[0],
+                           rclass = reply.q.qclass,
+                           ttl = self.zone.ttl,
+                           rdata = r[1])
+                reply.add_ar(rr)
 
 class CtrlServer(ss.TCPServer):
     allow_reuse_address = True
