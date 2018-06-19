@@ -30,15 +30,18 @@ def parse_args(args = None):
     a.add_argument("-f", "--file",
                    action = "store", default = None,
                    help = "data file name")
+    a.add_argument("-a", "--addr",
+                   action = "store", default = "0",
+                   help = "dns listen address")
     a.add_argument("-p", "--port", type = int,
                    action = "store", default = 53,
-                   help = "dns socket port number")
+                   help = "dns listen port number")
+    a.add_argument("-A", "--ctrladdr",
+                   action = "store", default = "dnsd-control",
+                   help = "control socket address")
     a.add_argument("-P", "--ctrlport", type = int,
                    action = "store", default = 54,
                    help = "control socket port number")
-    a.add_argument("-a", "--addr",
-                   action = "store", default = None,
-                   help = "listen address (for debugging only)")
     a.add_argument("-d", "--daemon",
                    action = "store_true",
                    help = "daemon mode, log to syslog")
@@ -50,10 +53,8 @@ def parse_args(args = None):
     opts = a.parse_args(args)
 
 def run():
-    intaddr, privaddr = getaddrs()
-
     global zone
-    zone = Zone(opts.port)
+    zone = Zone(opts.addr, opts.port)
 
     if opts.file is not None:
         with open(opts.file) as f:
@@ -64,32 +65,14 @@ def run():
 
     zone.start()
 
-    ctrl = CtrlServer((privaddr, opts.ctrlport))
+    ctrl = CtrlServer((opts.ctrladdr, opts.ctrlport))
     ctrl.start()
-
-def getaddrs():
-    if opts.addr is not None:
-        # XXX only good for debugging
-        return opts.addr, opts.addr
-
-    # XXX this is a little bogus
-    addrs = socket.getaddrinfo(socket.gethostname(), 0,
-                               socket.AF_INET, socket.SOCK_STREAM)
-    assert len(addrs) == 2
-    if addrs[0][4][0].startswith("172.18.0."):
-        privaddr = addrs[0][4][0]
-        intaddr = addrs[1][4][0]
-    else:
-        assert addrs[1][4][0].startswith("172.18.0.")
-        privaddr = addrs[1][4][0]
-        intaddr = addrs[0][4][0]
-
-    return intaddr, privaddr
 
 class Zone(object):
     logger = ds.DNSLogger("request,-request") # don't log
 
-    def __init__(self, port):
+    def __init__(self, addr, port):
+        self.addr = addr
         self.port = port
         self.origin = None
         self.ttl = None
@@ -114,33 +97,42 @@ class Zone(object):
                 ]
             }
         with self.lock:
-            assert self.origin is None
-            self.origin = Zone.mklabel(origin)
-            self.extaddr = extaddr
-            self.ttl = ttl
-            assert self.db == {}
-            for name, jrds in jdata.items():
-                name = self.fqdn(name)
-                rds = []
-                for jrd in jrds:
-                    rd = self.mkrd(jrd[0], jrd[1:])
-                    if rd is None:
-                        raise RuntimeError("unknown RR type %s" % (jrd[0]))
-                    rds.append(rd)
-                self.db[name] = rds
+            try:
+                assert self.origin is None
+                self.origin = Zone.mklabel(origin)
+                self.extaddr = extaddr
+                self.ttl = ttl
+                assert self.db == {}
+                for name, jrds in jdata.items():
+                    name = self.fqdn(name)
+                    rds = []
+                    for jrd in jrds:
+                        rd = self.mkrd(jrd[0], jrd[1:])
+                        if rd is None:
+                            raise RuntimeError("unknown RR type %s" %
+                                               (jrd[0]))
+                        rds.append(rd)
+                    self.db[name] = rds
+            except Exception:
+                # undo partial initialization
+                self.origin = None
+                self.extaddr = None
+                self.tel = None
+                self.db = {}
+                raise
 
     def initialized(self):
         return self.origin is not None
 
     def start(self):
-        log.info("listening on port %s" % (self.port))
+        log.info("listening on %s port %s" % (self.addr, self.port))
         self.resolver = Resolver(self)
         self.udp = ds.DNSServer(self.resolver,
-                                address = "0", port = self.port,
+                                address = self.addr, port = self.port,
                                 tcp = False, logger = self.logger)
         self.udp.start_thread()
         self.tcp = ds.DNSServer(self.resolver,
-                                address = "0", port = self.port,
+                                address = self.addr, port = self.port,
                                 tcp = True, logger = self.logger)
         self.tcp.start_thread()
 
