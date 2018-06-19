@@ -8,13 +8,12 @@ import json
 import requests
 import socket
 import threading
-import time
 import syslog
 import traceback
 
 opts = None
 log = None
-zones = {}
+zone = {}
 
 def main():
     parse_args()
@@ -29,9 +28,12 @@ def main():
 def parse_args(args = None):
     a = argparse.ArgumentParser()
     a.add_argument("-f", "--file",
-                   action = "store", default = "/etc/dnsd/zones.json",
+                   action = "store", default = None,
                    help = "data file name")
     a.add_argument("-p", "--port", type = int,
+                   action = "store", default = 53,
+                   help = "dns socket port number")
+    a.add_argument("-P", "--ctrlport", type = int,
                    action = "store", default = 54,
                    help = "control socket port number")
     a.add_argument("-a", "--addr",
@@ -48,28 +50,29 @@ def parse_args(args = None):
     opts = a.parse_args(args)
 
 def run():
-    with open(opts.file) as f:
-        jzones = json.load(f)
-        log.verbose2(json.dumps(jzones, indent = 4))
+    intaddr, privaddr = getaddrs()
 
-    intaddr, extaddr, privaddr = getaddrs()
+    global zone
+    zone = Zone(opts.port)
 
-    for addr, port, origin, ttl, data in jzones:
-        zone = Zone(origin, ttl, data, addr, port, intaddr, extaddr)
-        global zones
-        zones[zone.origin] = zone
+    if opts.file is not None:
+        with open(opts.file) as f:
+            jzone = json.load(f)
+        log.verbose2(json.dumps(jzone, indent = 4))
+        origin, extaddr, ttl, jdata = jzone
+        zone.init(origin, extaddr, ttl, jdata)
 
-    for zone in zones.values():
-        zone.start()
+    zone.start()
 
-    ctrl = CtrlServer((privaddr, opts.port))
+    ctrl = CtrlServer((privaddr, opts.ctrlport))
     ctrl.start()
 
 def getaddrs():
     if opts.addr is not None:
         # XXX only good for debugging
-        return opts.addr, opts.addr, opts.addr
-    # XXX this is bogus
+        return opts.addr, opts.addr
+
+    # XXX this is a little bogus
     addrs = socket.getaddrinfo(socket.gethostname(), 0,
                                socket.AF_INET, socket.SOCK_STREAM)
     assert len(addrs) == 2
@@ -81,86 +84,113 @@ def getaddrs():
         privaddr = addrs[1][4][0]
         intaddr = addrs[0][4][0]
 
-    # XXX temporary
-    r = requests.get("http://www.ewxyzzy.net/cgi-bin/addr")
-    extaddr = r.text.strip()
-
-    return intaddr, extaddr, privaddr
+    return intaddr, privaddr
 
 class Zone(object):
     logger = ds.DNSLogger("request,-request") # don't log
 
-    def __init__(self, origin, ttl, jdata,
-                 servaddr, servport, intaddr, extaddr):
-        origin = Zone.mklabel(origin)
-        self.origin = origin
-        self.ttl = ttl
-        self.intaddr = intaddr
-        self.extaddr = extaddr
-        self.servaddr = self.modaddr(servaddr)
-        self.servport = servport
+    def __init__(self, port):
+        self.port = port
+        self.origin = None
+        self.ttl = None
+        self.extaddr = None
+        self.db = {}
         self.lock = threading.Lock()
-        self.rds = {}
-        for name, jrds in jdata.items():
-            name = self.fqdn(name)
-            rds = []
-            for jrd in jrds:
-                rd = self.mkrd(jrd[0], jrd[1:])
-                if rd is None:
-                    raise RuntimeError("unknown RR type %s" % (jrd[0]))
-                rds.append(rd)
-            self.rds[name] = rds
         self.resolver = None
         self.udp = None
         self.tcp = None
 
+    def init(self, origin, extaddr, ttl, jdata = None):
+        if jdata is None:
+            jdata = {
+                "@": [
+                    ["SOA", "ns", "hostmaster",
+                            [1, 3600, 300, 3600000, 3600000]],
+                    ["NS", "ns"],
+                    ["A", "@"]
+                ],
+                "ns": [
+                    ["A", "@"]
+                ]
+            }
+        with self.lock:
+            assert self.origin is None
+            self.origin = Zone.mklabel(origin)
+            self.extaddr = extaddr
+            self.ttl = ttl
+            assert self.db == {}
+            for name, jrds in jdata.items():
+                name = self.fqdn(name)
+                rds = []
+                for jrd in jrds:
+                    rd = self.mkrd(jrd[0], jrd[1:])
+                    if rd is None:
+                        raise RuntimeError("unknown RR type %s" % (jrd[0]))
+                    rds.append(rd)
+                self.db[name] = rds
+
+    def initialized(self):
+        return self.origin is not None
+
     def start(self):
-        log.info("listening on %s port %s zone %s" %
-                 (self.servaddr, self.servport, self.origin))
+        log.info("listening on port %s" % (self.port))
         self.resolver = Resolver(self)
         self.udp = ds.DNSServer(self.resolver,
-                                address = self.servaddr, port = self.servport,
+                                address = "0", port = self.port,
                                 tcp = False, logger = self.logger)
         self.udp.start_thread()
         self.tcp = ds.DNSServer(self.resolver,
-                                address = self.servaddr, port = self.servport,
+                                address = "0", port = self.port,
                                 tcp = True, logger = self.logger)
         self.tcp.start_thread()
 
     def get(self, label, default):
-        return self.rds.get(label, default)
+        return self.db.get(label, default)
 
-    def set(self, name, type, value):
+    def add(self, name, type, value):
+        assert self.origin is not None
         name = self.fqdn(name)
+        log.verbose("add: %s %s %s" % (name, type, value))
         nrd = self.mkrd(type, value)
         if nrd is None:
             return False
 
         with self.lock:
+            rds = self.get(name, [])
+            log.verbose("add: old rds %s" % (rds))
+            rds.append(nrd)
+            self.db[name] = rds
+            log.verbose("add: new rds %s" % (rds))
+
+        return True
+
+    def delete(self, name, type):
+        assert self.origin is not None
+        name = self.fqdn(name)
+        log.verbose("delete: %s %s" % (name, type))
+        type = self.mktype(type)
+        if type is None:
+            return False
+
+        with self.lock:
+            if type == dl.QTYPE.ANY:
+                del self.db[name]
+                return True
             ords = self.get(name, [])
-            log.verbose("set: old rds %s" % (ords))
+            log.verbose("delete: old rds %s" % (ords))
             nrds = []
-            found = False
             for ord in ords:
-                if ord[0] != nrd[0]:
+                if ord[0] != type:
                     nrds.append(ord)
-                    continue
-                # replace first record of the same type, remove all others
-                if not found:
-                    nrds.append(nrd)
-                    found = True
-            # add record if no existing record of the same type
-            if not found:
-                nrds.append(nrd)
-            self.rds[name] = nrds
-            log.verbose("set: new rds %s" % (nrds))
+            self.db[name] = nrds
+            log.verbose("delete: new rds %s" % (nrds))
 
         return True
 
     def mkrd(self, jtype, jvalue):
         jtype = jtype.lower()
         if type(jvalue) is not list:
-            jvalue = (jvalue)
+            jvalue = (jvalue,)
         if jtype == "soa":
             return (dl.QTYPE.SOA,
                     dl.SOA(self.fqdn(jvalue[0]),
@@ -178,7 +208,24 @@ class Zone(object):
             return (dl.QTYPE.TXT, dl.TXT(jvalue[0]))
         if jtype == "ptr":
             return (dl.QTYPE.PTR, dl.PTR(self.fqdn(jvalue[0])))
+        return None
 
+    def mktype(self, jtype):
+        jtype = jtype.lower()
+        if jtype == "any":
+            return dl.QTYPE.ANY
+        if jtype == "ns":
+            return dl.QTYPE.NS
+        if jtype == "a":
+            return dl.QTYPE.A
+        if jtype == "cname":
+            return dl.QTYPE.CNAME
+        if jtype == "mx":
+            return dl.QTYPE.MX
+        if jtype == "txt":
+            return dl.QTYPE.TXT
+        if jtype == "ptr":
+            return dl.QTYPE.PTR
         return None
 
     def fqdn(self, name):
@@ -196,9 +243,7 @@ class Zone(object):
         return dl.DNSLabel(name.lower())
 
     def modaddr(self, addr):
-        if addr == "*":
-            return self.intaddr
-        if addr == "**":
+        if addr == "@":
             return self.extaddr
         return addr
 
@@ -212,7 +257,7 @@ class Resolver(ds.BaseResolver):
             reply = self.resolve1(request)
         except Exception as e:
             log.error("%s" % traceback.format_exc())
-            reply = request.reply()
+            reply = request.reply(ra = 0, aa = 1)
             reply.header.rcode = dl.RCODE.SERVFAIL
         log.verbose("reply:\n%s" % (reply))
         return reply
@@ -223,6 +268,7 @@ class Resolver(ds.BaseResolver):
             reply.header.rcode = dl.RCODE.REFUSED
             return reply
         with self.zone.lock:
+            # this works even before zone is initialized
             additional = set()
             if request.q.qclass == dl.CLASS.IN:
                 self.add_answer(reply, additional, request.q.qname)
@@ -237,17 +283,16 @@ class Resolver(ds.BaseResolver):
         # The basic idea is to return all records that match the query.
         # Some complications are ANY queries, following CNAME, and
         # keeping track of names to put in the additional section.
-        # Not all features are supported, like subdomain referral.
+        # Not all features are supported, like subdomain referral,
+        # because we don't got none of those.
         #
         if level > 10:
             raise RuntimeError("CNAME loop in resolving %s" %
                                (str(reply.q.qname)))
-        rds = self.zone.get(Zone.mklabel(str(name)), None)
-        if rds is None:
-            if level > 0:
-                # not an error if we're just following CNAME
-                reply.header.rcode = dl.RCODE.NXDOMAIN
-            return
+        # To avoid NXDOMAIN caching before we're populated, no result
+        # is not considered an error.
+        # This is also correct when following CNAME.
+        rds = self.zone.get(Zone.mklabel(str(name)), [])
         qtype = reply.q.qtype
         for r in rds:
             if (qtype != dl.QTYPE.ANY and
@@ -300,6 +345,7 @@ class CtrlServer(ss.TCPServer):
         self.serve_forever()
 
 class CtrlRequest(ss.StreamRequestHandler):
+    dirty = False
     def handle(self):
         try:
             request = self.rfile.readline().strip().decode("us-ascii")
@@ -320,21 +366,34 @@ class CtrlRequest(ss.StreamRequestHandler):
 
     def handle1(self, request):
         cmd, *args = request
-        if cmd == "set":
-            zone, name, type, value = args
-            return self.set(zone, name, type, value)
+        if cmd == "init":
+            if zone.initialized():
+                return (1, "Zone already initialized")
+            origin, extaddr, ttl = args
+            return self.init(origin, extaddr, ttl)
+        if not zone.initialized():
+            return (1, "Zone not initialized")
+        if cmd == "add":
+            name, type, value = args
+            return self.add(name, type, value)
+        if cmd == "delete":
+            name, type = args
+            return self.delete(name, type)
         return (1, "Unknown request")
 
-    def set(self, origin, name, type, value):
-        zone = self.findzone(origin)
-        if zone is None:
-            return (1, "Unknown zone")
-        if not zone.set(name, type, value):
+    def init(self, origin, extaddr, ttl):
+        zone.init(origin, extaddr, ttl)
+        return (0, "Success")
+
+    def add(self, name, type, value):
+        if not zone.add(name, type, value):
             return (1, "Invalid resource type or value")
         return (0, "Success")
 
-    def findzone(self, origin):
-        return zones.get(Zone.mklabel(origin), None)
+    def delete(self, name, type):
+        if not zone.delete(name, type):
+            return (1, "Invalid resource type")
+        return (0, "Success")
 
 class Log(object):
     def __init__(self, name, opts):
