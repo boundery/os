@@ -306,15 +306,17 @@ class Resolver(ds.BaseResolver):
 
     def add_authority(self, reply, additional):
         name = self.zone.origin
+        authtype = dl.QTYPE.NS if reply.header.a > 0 else dl.QTYPE.SOA
         for r in self.zone.get(name, []):
-            if r[0] == dl.QTYPE.NS:
+            if r[0] == authtype:
                 rr = dl.RR(rname = name,
                            rtype = r[0],
                            rclass = reply.q.qclass,
                            ttl = self.zone.ttl,
                            rdata = r[1])
                 reply.add_auth(rr)
-                additional |= {r[1].label}
+                if authtype == dl.QTYPE.NS:
+                    additional |= {r[1].label}
 
     def add_additional(self, reply, name, type):
         for r in self.zone.get(name, []):
