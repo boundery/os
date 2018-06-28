@@ -64,21 +64,21 @@ if [ -f /boot/zerotier.conf ]; then
      docker run --rm -d --net=host -e ZEROTIER_TOKEN=${ZEROTIER_TOKEN} \
             --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun \
             --name zerotier zerotier
-     ZTIF=`ip -o link | grep -Eo '^[0-9]+: zt.+: ' | cut -d' ' -f2 | tr -d :`
-fi
 
-# XXX Give it a time out for now, for debugging other parts of the system
-#     while zerotier is flaky.  It should always work, so that needs
-#     to be looked into.
-n=20
-while ! ip link show $ZTIF >/dev/null 2>&1; do
-    echo "Waiting for Zerotier private network to come up...$n"
-    if [ $n -le 0 ]; then
-        break
-    fi
-    n=$(($n - 1))
-    sleep 1
-done
+     # XXX Give it a time out for now, for debugging other parts of the system
+     #     while zerotier is flaky.  It should always work, so that needs
+     #     to be looked into.
+     n=20
+     while [ -z "$ZTIF" ]; do
+         echo "Waiting for Zerotier interface to appear"
+         ZTIF=`ip -o link | grep -Eo '^[0-9]+: zt.+: ' | cut -d' ' -f2 | tr -d :`
+         if [ $n -le 0 ]; then
+             break
+         fi
+         n=$(($n - 1))
+         sleep 1
+     done
+fi
 
 # Create default networks
 #XXX Create a public network, and disable default/docker0
