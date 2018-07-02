@@ -13,7 +13,7 @@ mount -a
 
 hostname `cat /etc/hostname`
 
-syslogd -C64
+syslogd -C512 -D
 klogd -c5
 
 echo 5 >/proc/sys/kernel/panic
