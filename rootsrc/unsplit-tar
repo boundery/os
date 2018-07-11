@@ -10,9 +10,9 @@ fileroot=$2
 
 while read off len; do
     if [ "$off" = "CD" ]; then
-        cd $fileroot/$len
+        cd "$fileroot/$len"
     elif [ "$off" = "F" ]; then
-        cat $len
+        cat "$len"
     else
         dd if=$basename.bin count=$len bs=262144 iflag=skip_bytes,count_bytes skip=$off status=none
     fi
