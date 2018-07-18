@@ -166,7 +166,8 @@ class Zone(object):
 
         with self.lock:
             if type == dl.QTYPE.ANY:
-                del self.db[name]
+                if name in self.db:
+                    del self.db[name]
                 return True
             ords = self.get(name, [])
             log.verbose("delete: old rds %s" % (ords))
@@ -351,7 +352,7 @@ class CtrlRequest(ss.StreamRequestHandler):
             reply = (1, "Invalid request: %s" % (str(e)))
         except Exception as e:
             log.error("%s" % traceback.format_exc())
-            reply = (10, str(e))
+            reply = (10, "%s: %s" % (type(e).__name__, e))
         try:
             reply = (json.dumps(reply) + "\n").encode("us-ascii")
             self.wfile.write(reply)
