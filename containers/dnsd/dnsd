@@ -37,7 +37,7 @@ def parse_args(args = None):
                    action = "store", default = 53,
                    help = "dns listen port number")
     a.add_argument("-A", "--ctrladdr",
-                   action = "store", default = "dnsd-control",
+                   action = "store", default = "dnsd.dnsdcontrol",
                    help = "control socket address")
     a.add_argument("-P", "--ctrlport", type = int,
                    action = "store", default = 54,
