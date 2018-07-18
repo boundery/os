@@ -58,8 +58,8 @@ for net in $nets; do
     netname="${x%%:*}"
     netalias="${x#*:}"
     if [ "$netalias" = "$netname" ]; then
-        # use default alias
-        netalias="$netname-$name"
+        # not specified, use default alias (basically a no-op)
+        netalias="$name.$netname"
     fi
     if [ "$x" != "$net" ]; then
         # must remove network first because it isn't necessarily

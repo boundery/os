@@ -89,9 +89,14 @@ docker network create --subnet=172.18.0.0/22 --ip-range=172.18.0.0/23 \
        -d macvlan -o parent=$ZTIF private
 
 echo Starting dnsd
-startdnsd -d
+runcontainer \
+    -a --publish=53:53/tcp \
+    -a --publish=53:53/udp \
+    -a --cap-add=NET_BIND_SERVICE \
+    -n +dnsdcontrol \
+    dnsd dnsd -d
 
-#Start the haproxy system container
+echo Starting haproxy
 docker run -d --name haproxy haproxy
 
 # XXX eventually this will be some form of getty
