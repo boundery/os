@@ -1,0 +1,23 @@
+#!/bin/sh
+
+dst="/etc/letsencrypt/accounts"
+vol="/mnt/vol00"
+src="$vol/certmgr$dst"
+
+if [ ! -d "$src" ]; then
+    if ! mountpoint -q "$vol"; then
+	echo "$vol is not mounted; can't initialize $src."
+	exit 1
+    fi
+    mkdir -p -m700 "$src"
+fi
+
+if [ $# -eq 0 ]; then
+    set -- -d
+fi
+
+exec runcontainer \
+    -i \
+    -n dnsdcontrol \
+    -a --mount=type=bind,src="$src",dst="$dst" \
+    certmgr certmgr "$@"

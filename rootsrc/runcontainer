@@ -1,0 +1,73 @@
+#!/bin/sh
+
+createargs=""
+startargs=""
+mounts="--mount=type=bind,src=/dev/log,dst=/dev/log"
+nets=""
+
+usage() {
+    echo "Usage: ${0##*/} [flags]    container [command ...]"
+    echo "    -a arg                 pass arg to docker"
+    echo "    -i                     run interactively (default is detached)"
+    echo "    -t                     allocate tty"
+    echo "    -n [+]network[:alias]  connect to network with optional alias"
+    echo "                           (default network is always connected)"
+    echo "                           append + to create network first"
+    exit 1
+}
+
+while getopts a:in:t opt; do
+    case $opt in
+    (a)
+        createargs="$createargs $OPTARG"
+        ;;
+    (i)
+        createargs="$createargs -i"
+        startargs="$startargs -i"
+        ;;
+    (n)
+        nets="$nets $OPTARG"
+        ;;
+    (t)
+        createargs="$createargs -t"
+        if [ -f /.bashrc ]; then
+            mounts="$mounts --mount=type=bind,src=/.bashrc,dst=/root/.bashrc"
+        fi
+        ;;
+    (\?)
+        usage
+        ;;
+    esac
+done
+shift $(($OPTIND - 1))
+if [ -z "$1" ]; then
+    usage
+fi
+container="$1"
+name="$1"
+shift
+if [ -n "$1" -a "$1" != "$name" ]; then
+    name="$name-$1"
+fi
+
+docker container create \
+    --rm --name="$name" $createargs $mounts "$container" "$@"
+
+for net in $nets; do
+    x="${net#+}"
+    netname="${x%%:*}"
+    netalias="${x#*:}"
+    if [ "$netalias" = "$netname" ]; then
+        # use default alias
+        netalias="$netname-$name"
+    fi
+    if [ "$x" != "$net" ]; then
+        # must remove network first because it isn't necessarily
+        # valid across reboots
+        docker network rm "$netname" >/dev/null 2>&1
+        docker network create --driver=bridge "$netname"
+    fi
+    docker network connect --alias="$netalias" "$netname" "$name"
+done
+
+exec docker container start $startargs "$name"

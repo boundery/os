@@ -1,0 +1,173 @@
+#!/usr/bin/python3
+
+import argparse
+import json
+import subprocess
+import sys
+import syslog
+import traceback
+
+opts = None
+log = None
+
+def main():
+    parse_args()
+
+    global log
+    log = Log("certmgr", opts)
+
+    run()
+
+    return 0
+
+def parse_args(args = None):
+    a = argparse.ArgumentParser()
+    a.add_argument("-d", "--daemon",
+                   action = "store_true",
+                   help = "daemon mode, log to syslog")
+    a.add_argument("-n", "--dryrun",
+                   action = "store_true",
+                   help = "dry run, don't actually do anything")
+    a.add_argument("-t", "--test",
+                   action = "store_true",
+                   help = "test mode, use staging server")
+    a.add_argument("-v", "--verbose",
+                   action = "count", default = 0,
+                   help = "verbose, log more")
+    a.add_argument("request",
+                   nargs = argparse.REMAINDER,
+                   help = "cert request (new|renew domain)")
+
+    global opts
+    opts = a.parse_args(args)
+
+def run():
+    try:
+        if len(opts.request) > 0:
+            reply = run1(opts.request)
+        else:
+            reply = run1(json.loads(sys.stdin.readline()))
+    except json.decoder.JSONDecodeError:
+        reply = (2, "Request must be a single line in JSON format")
+    except Exception as e:
+        log.error(traceback.format_exc())
+        reply = (1, "Internal error: %s: %s" % (type(e).__name__, e))
+
+    sys.stdout.write(json.dumps(reply) + "\n")
+
+def run1(request):
+    if type(request) is not list or len(request) < 1:
+        return (2, "Usage: [command, args...]")
+    log.verbose("request %s" % (request))
+
+    cmd, *args = request
+    if cmd == "new" or cmd == "renew":
+        # these are handled the same way
+        if len(args) != 1:
+            return (2, "Command \"%s\" requires exactly 1 argument" % (cmd))
+        return newcert(args[0])
+    else:
+        return (2, "Unknown command \"%s\"" % (cmd))
+
+def newcert(domain):
+    flags = []
+    if opts.verbose < 2:
+        flags += [
+            "--quiet",
+        ]
+    if opts.test:
+        flags += [
+            "--test-cert",
+        ]
+    flags += [
+        "--non-interactive",
+            "--agree-tos",
+            "--register-unsafely-without-email",
+        "--manual",
+            "--manual-public-ip-logging-ok",
+            "--manual-auth-hook=certmgr-auth-hook",
+            "--manual-cleanup-hook=certmgr-cleanup-hook",
+        "--preferred-challenges=dns",
+        "--force-renewal",
+        "--domain=" + domain,
+    ]
+
+    try:
+        out = runcmd(["certbot", "certonly"] + flags)
+    except Exception as e:
+        # already logged
+        return (1, "Command failed: %s" % (e))
+    if out != "":
+        log.verbose("output from certbot:\n%s" % (out))
+
+    if not opts.dryrun:
+        d = "/etc/letsencrypt/live/" + domain
+        with open(d + "/fullchain.pem") as f:
+            cert = f.read()
+        with open(d + "/privkey.pem") as f:
+            key = f.read()
+
+    return (0, (cert, key))
+
+def runcmd(cmd, stdin = subprocess.DEVNULL, ignoreerr = False,
+           alwaysrun = False, quiet = False):
+    if not quiet:
+        log.verbose2("%s" % (" ".join(cmd)))
+    if not alwaysrun and opts.dryrun:
+        return ""
+    s = None
+    try:
+        s = subprocess.run(cmd, stdin = stdin,
+                           stdout = subprocess.PIPE,
+                           stderr = subprocess.STDOUT)
+        if type(s.stdout) is bytes:
+            s.stdout = s.stdout.decode("us-ascii")
+        s.check_returncode()
+    except Exception as e:
+        if not ignoreerr:
+            if s is None:
+                msg = str(e)
+            else:
+                msg = "%s:\n%s" % (e, s.stdout)
+            log.error(msg)
+            raise RuntimeError(msg)
+    return s.stdout
+
+class Log(object):
+    def __init__(self, name, opts):
+        self.daemon = opts.daemon
+        self.level = opts.verbose
+        if self.daemon:
+            syslog.openlog(name, 0, syslog.LOG_DAEMON)
+    def _log(self, priority, msg):
+        for line in msg.split("\n"):
+            if line == "":
+                continue
+            if self.daemon:
+                syslog.syslog(priority, line)
+            else:
+                print(line)
+    def info(self, msg):
+        self._log(syslog.LOG_INFO, msg)
+    def warning(self, msg):
+        self._log(syslog.LOG_WARNING, msg)
+    def error(self, msg):
+        self._log(syslog.LOG_ERR, msg)
+    def verbose(self, msg):
+        if self.level > 0:
+            self._log(syslog.LOG_INFO, msg)
+    def verbose2(self, msg):
+        if self.level > 1:
+            self._log(syslog.LOG_INFO, msg)
+
+if __name__ == "__main__":
+    try:
+        exit(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        if log:
+            log.error(traceback.format_exc())
+        else:
+            traceback.print_exc()
+    exit(1)

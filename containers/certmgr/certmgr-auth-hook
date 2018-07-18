@@ -1,0 +1,46 @@
+#!/usr/bin/python3
+
+import os
+import sys
+import socket
+import json
+
+dnsdhost = "dnsd.dnsdcontrol"
+dnsdport = 54
+
+def main():
+    # we're auth hook unless name contains "cleanup"
+    isauth = sys.argv[0].find("cleanup") < 0
+
+    domain = os.getenv("CERTBOT_DOMAIN")
+    validation = os.getenv("CERTBOT_VALIDATION")
+    assert domain is not None
+    assert validation is not None
+
+    # domain is fully qualified, so make sure it ends in .
+    name = "_acme-challenge." + domain + ("." if domain[-1] != "." else "")
+    # always delete first, in case previous cleanup failed
+    dnsd(("delete", name, "txt"))
+    if isauth:
+        dnsd(("add", name, "txt", validation))
+
+    return 0
+
+def dnsd(request):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((dnsdhost, dnsdport))
+    s.send((json.dumps(request) + "\n").encode("us-ascii"))
+    reply = bytes()
+    while True:
+        r = s.recv(4096)
+        if len(r) == 0:
+            break
+        reply += r
+    s.close()
+    reply = json.loads(reply.decode("us-ascii"))
+    if reply[0] != 0:
+        print("Error from dnsd: %s" % (reply[1]))
+        exit(1)
+
+if __name__ == "__main__":
+    exit(main())
