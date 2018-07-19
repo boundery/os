@@ -8,18 +8,24 @@ nets=""
 usage() {
     echo "Usage: ${0##*/} [flags]    container [command ...]"
     echo "    -a arg                 pass arg to docker"
-    echo "    -i                     run interactively (default is detached)"
+    echo "    -f                     run in foreground"
+    echo "    -i                     attach stdin (default is detached)"
     echo "    -t                     allocate tty"
     echo "    -n [+]network[:alias]  connect to network with optional alias"
     echo "                           (default network is always connected)"
     echo "                           append + to create network first"
+    echo "    -f is implemented by attaching output."
+    echo "    -i implies foreground with output attached."
     exit 1
 }
 
-while getopts a:in:t opt; do
+while getopts a:fin:t opt; do
     case $opt in
     (a)
         createargs="$createargs $OPTARG"
+        ;;
+    (f)
+        startargs="$startargs -a"
         ;;
     (i)
         createargs="$createargs -i"
@@ -51,7 +57,7 @@ if [ -n "$1" -a "$1" != "$name" ]; then
 fi
 
 docker container create \
-    --rm --name="$name" $createargs $mounts "$container" "$@"
+    --rm --name="$name" $createargs $mounts "$container" "$@" >/dev/null
 
 for net in $nets; do
     x="${net#+}"
@@ -65,7 +71,7 @@ for net in $nets; do
         # must remove network first because it isn't necessarily
         # valid across reboots
         docker network rm "$netname" >/dev/null 2>&1
-        docker network create --driver=bridge "$netname"
+        docker network create --driver=bridge "$netname" >/dev/null
     fi
     docker network connect --alias="$netalias" "$netname" "$name"
 done

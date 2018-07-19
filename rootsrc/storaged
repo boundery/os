@@ -580,22 +580,35 @@ run() {
 }
 
 runsm() {
-    local d=${dflag:+-d}
-    local v
+    local rcflags
+    local smflags
+    if [ "$dflag" ]; then
+        # daemon mode: run storagemgr in daemon mode but still wait for it
+        rcflags=-f
+        smflags="$smflags -d"
+    else
+        # not daemon: assume we have a tty so run storagemgr with a pty
+        rcflags=-it
+    fi
     case $vflag in
     (0)
         ;;
     (1)
-        v=-v
+        smflags="$smflags -v"
         ;;
     (*)
-        v=-vv
+        smflags="$smflags -vv"
         ;;
     esac
-    verbose2 smdocker $d "$@" $v
+    verbose2 runcontainer $rcflags storagemgr "$@" $smflags
     # don't have to use run because -d takes care of logging
     # but docker errors are missed
-    smdocker $d "$@" $v
+    runcontainer \
+        -a --network=none \
+        -a --mount=type=bind,src=/mnt,dst=/mnt,bind-propagation=shared \
+        -a --privileged \
+        $rcflags \
+        storagemgr storagemgr "$@" $smflags
     return $?
 }
 
