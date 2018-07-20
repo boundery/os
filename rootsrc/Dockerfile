@@ -43,16 +43,9 @@ RUN    apt-get update \
     && rm -rf /keys \
     && rm -rf /var/lib/apt/lists/*
 
-COPY init /sbin/
-COPY fstab /etc/
+COPY fstab mdev.conf /etc/
 COPY modules.${ARCH} /etc/modules
-COPY mdev.conf /etc/
-COPY wpa_supplicant.conf /usr/local/etc
-COPY mkwpaconf /usr/local/sbin
-COPY startdocker /usr/local/sbin
-COPY netd /usr/local/sbin
-COPY runcontainer /usr/local/sbin
-COPY storaged /usr/local/sbin
-COPY certmgr /usr/local/sbin
-COPY unsplit-tar /usr/local/sbin
-COPY sethostname /etc/dhcp/dhclient-exit-hooks.d
+COPY sethostname /etc/dhcp/dhclient-exit-hooks.d/
+COPY wpa_supplicant.conf /usr/local/etc/
+COPY init /sbin/
+COPY unsplit-tar certmgr storaged runcontainer netd startdocker mkwpaconf /usr/local/sbin/
