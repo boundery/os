@@ -34,6 +34,7 @@ RUN    apt-get update \
            dosfstools \
            lvm2 \
            docker-ce \
+           xz-utils \
     && apt-get remove -y --purge --autoremove gnupg apt-transport-https \
     && mkdir -p /var/lib/docker /etc/docker \
     && ln -s ../bin/busybox /sbin/mdev \
