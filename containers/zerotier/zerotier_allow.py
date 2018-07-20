@@ -82,7 +82,7 @@ while not member:
     member = zt_get("network/%s/member/%s" % (netid, hostid))
     time.sleep(5)
     pollcount += 1
-    if pollcount > 10:
+    if not member and pollcount > 10:
         raise Exception("Timed out waiting for member to show up")
 
 #Now authorize ourselves, if we're not already.
