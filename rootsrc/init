@@ -96,12 +96,21 @@ runcontainer \
     -n +dnsdcontrol \
     dnsd dnsd -d
 
-echo Starting haproxy
+echo Starting web api service
+#XXX Need to persist apikey/username on the SDCard.
+touch /tmp/apikey /tmp/username
+docker container create -t --net=private --ip 172.18.0.2 \
+       -v /tmp/apikey:/apikey -v /tmp/username:/username --name web web
+docker container start web
+
+#Start the haproxy system container
+echo Starting system haproxy
 docker run -d --name haproxy haproxy
 
 # XXX eventually this will be some form of getty
 setsid -cw bash -l
 
+docker kill web
 docker kill dnsd
 docker kill zerotier
 startdocker -k

@@ -1,0 +1,4 @@
+#!/bin/sh
+
+cd /web/
+exec python3 apiserver.py

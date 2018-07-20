@@ -374,6 +374,7 @@ dnsd_clean:
 		$(FSDIR) \
 		$(IMGFSDIR)/layers
 
+
 CERTMGR := $(IMGFSDIR)/layers/certmgr.off
 certmgr: $(CERTMGR)
 $(CERTMGR): $(PYTHON3) $(CONTAINERDIR)/certmgr/* $(SCRIPTDIR)/untar-docker-image
@@ -390,9 +391,21 @@ certmgr_clean:
 		$(FSDIR) \
 		$(IMGFSDIR)/layers
 
+WEB := $(IMGFSDIR)/layers/web.off
+web: $(WEB)
+$(WEB): $(PYTHON3) $(CONTAINERDIR)/web/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t web '$(FROM_PREFIX)' \
+	  $(CONTAINERDIR)/web $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(WEB)
+
+PHONY += web_clean
+web_clean:
+	$(SCRIPTDIR)/mkcontainer -c web '$(FROM_PREFIX)' \
+	  $(FSDIR) $(IMGFSDIR)/layers
+
 PHONY += fs_clean
 fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean \
-          haproxy_clean dnsd_clean certmgr_clean
+          haproxy_clean dnsd_clean certmgr_clean web_clean
 	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs
