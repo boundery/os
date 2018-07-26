@@ -1,0 +1,37 @@
+#!/bin/bash
+
+if [ -z "$1" ] || [ ! -d "$1" ] ; then
+    echo Usage: $0 dir >&2
+    exit 99
+fi
+
+#XXX don't hardcode the hostname of the flashair.
+
+self=$(realpath "$0")
+
+cd "$1"
+
+get_fat_datetime () {
+    read year mon day hour min sec <<<$(date +'%-Y %-m %-d %-H %-M %-S')
+    printf 0x%x $(( ((year-1980)<<25)|(mon<<21)|(day<<16)|(hour<<11)|(min<<5)|(sec>>1) ))
+}
+
+#curl -s "http://flashair/upload.cgi?WRITEPROTECT=ON" | egrep -o '(SUCCESS|ERROR)'
+
+if [ -z "$UPDIR" ]; then
+    echo Setting time
+    curl -s "http://flashair/upload.cgi?FTIME=$(get_fat_datetime)" | egrep -o '(SUCCESS|ERROR)'
+fi
+
+echo Creating ${UPDIR:-/}
+curl -s "http://flashair/upload.cgi?UPDIR=${UPDIR:-/}" | egrep -o '(SUCCESS|ERROR)'
+
+for ent in `ls --group-directories-first | tac`; do
+    if [ -d $ent ]; then
+        ( cd $ent; UPDIR=$UPDIR/$ent $self .)
+    else
+        echo Uploading $UPDIR/$ent
+        curl -s --form "file=@$ent" http://flashair/upload.cgi | egrep -o '(SUCCESS|ERROR)'
+    fi
+done
+

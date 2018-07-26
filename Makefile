@@ -28,7 +28,7 @@ BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.
 
 #If we're building a specific image, automatically set the ARCH based on that.
 ARCHS := #Needed so ARCHS+=$(ARCH) expands $(ARCH) immediately, not recursively.
-ARM_TARGETS:=rpi3_img rpi3_img_clean chip_img chip_img_clean
+ARM_TARGETS:=rpi3_img rpi3_zip rip3_zip_clean rpi3_img_clean chip_img chip_img_clean
 ifneq ($(filter $(ARM_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=armhf
 ARCHS+=$(ARCH)
@@ -48,6 +48,7 @@ KERNEL_EXTRAS=dtbs
 SERIAL_TTY=ttyAMA0
 UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
+BOOT_MNT=/dev/mmcblk0p1
 CROSS_PREFIX=arm-linux-gnueabihf-
 FROM_PREFIX=arm32v7/
 else ifeq ($(ARCH), amd64)
@@ -55,6 +56,7 @@ KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
 KERNEL_EXTRAS=
 SERIAL_TTY=ttyS0
+BOOT_MNT=LABEL=ISOLINUX
 CROSS_PREFIX=
 FROM_PREFIX=
 else
@@ -254,6 +256,7 @@ $(INITRD): $(INITRDSRCDIR)/*
 	@mkdir -p $(INITRDDIR)
 	docker build $(DOCKER_BUILD_PROXY) \
 	  --build-arg FROM_PREFIX=$(FROM_PREFIX) \
+	  --build-arg BOOT_MNT=$(BOOT_MNT) \
 	  -t $(FROM_PREFIX)initrd $(INITRDSRCDIR)
 	docker container create --name=$(shell echo $(FROM_PREFIX) | tr -d '/')initrd \
 	  $(FROM_PREFIX)initrd
@@ -278,7 +281,8 @@ initrd_clean:
 ROOTFS := $(IMGFSDIR)/layers/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(SCRIPTDIR)/untar-docker-image
-	$(SCRIPTDIR)/mkcontainer -r -aARCH=$(ARCH) \
+	$(SCRIPTDIR)/mkcontainer -r \
+		-aARCH=$(ARCH) -aBOOT_MNT=$(BOOT_MNT) \
 		rootfs '$(FROM_PREFIX)' $(ROOTSRCDIR) \
 		$(FSDIR) \
 		$(IMGFSDIR)/layers \
@@ -463,6 +467,17 @@ $(RPI3_IMG): $(IMG_DEPS) $(SCRIPTDIR)/mkfatimg
 PHONY += rpi3_img_clean
 rpi3_img_clean:
 	rm $(RPI3_IMG)
+
+RPI3_ZIP := $(IMAGESDIR)/rpi3.zip
+rpi3_zip: $(RPI3_ZIP)
+$(RPI3_ZIP): $(IMG_DEPS)
+	@mkdir -p $(IMAGESDIR)
+	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
+	( cd $(IMGFSDIR) && zip -r $(RPI3_ZIP) * )
+
+PHONY += rpi3_zip_clean
+rpi3_zip_clean:
+	rm $(RPI3_ZIP)
 
 PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)

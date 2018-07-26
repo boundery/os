@@ -1,4 +1,4 @@
-LABEL=ISOIMAGE   /boot           auto      ro
+XBOOT_MNTX   /boot           auto      ro
 sysfs            /sys            sysfs     nosuid,noexec,nodev
 proc             /proc           proc      nosuid,noexec,nodev
 devtmpfs         /dev            devtmpfs  nosuid,noexec,size=16k

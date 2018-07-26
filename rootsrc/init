@@ -131,9 +131,9 @@ docker container start apps
 ( while true; do
       if ls /mnt/vol00/appscripts/*.tar.xz >/dev/null 2>&1; then
           for i in /mnt/vol00/appscripts/*.tar.xz; do
-              docker load -i $i
+              #docker load -i $i
               BASE=`echo $i | cut -d'/' -f5 | cut -d'.' -f1`
-              bash /mnt/vol00/appscripts/start$BASE
+              bash /mnt/vol00/appscripts/start$BASE >> /tmp/appstart.log
               rm $i
               echo INSTALLED APP: $BASE
           done

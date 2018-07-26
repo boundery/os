@@ -1,3 +1,3 @@
 proc             /proc       proc      nosuid,noexec,nodev
 devtmpfs         /dev        devtmpfs  nosuid,noexec
-LABEL=ISOIMAGE   /boot       auto      ro
+XBOOT_MNTX   /boot       auto      ro
