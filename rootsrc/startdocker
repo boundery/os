@@ -49,7 +49,7 @@ if [ -d /var/lib/docker/overlay2 ]; then
     fi
 fi
 
-dockerd -p "$pidfile" 2>&1 | logger -p daemon.info -t dockerd &
+dockerd --experimental -p "$pidfile" 2>&1 | logger -p daemon.info -t dockerd &
 
 while ! docker info >/dev/null 2>&1; do
     sleep 0.5
