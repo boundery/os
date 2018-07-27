@@ -1,20 +1,18 @@
 import socketserver
-import sys, os, io, argparse, json, time, docker, requests, socket, threading, lzma, html
+import sys, os, io, argparse, json, time, docker, requests, socket
+import threading, html, traceback
 
-#netcat_over_wifi | xz -d >/dev/null: 0m42.195s
-#+untar_no_write_to_fs:               0m43.906s
-#+untar_to_sda1:                      0m54.738s
-#+untar_to_vol00:                     1m15.985s
+#VIA INTERNET:
+#curl_https_to_dev_null:              0m25.746s
+#with_unxz:                           0m46.426s
+#without_unxz_to_docker:              5m21.534s
+#with_unxz_to_docker:                 4m55.459s
 #
-#uncompressed_nc_over_wifi | tar -t:  0m48.975s
+#appc, unxz in docker, docker.py BS=128K: 4m31s
+#appc, unxz in docker, docker.py BS=None: <failed>
+#appc, unxz in docker, docker.py BS=1M: 4m37s
 #
-#docker load of .xz:                  3m53.158s
-#docker load of .tar:                 4m34.725s
-#
-#appc, unxz in apps, docker.py (BUF_SIZE=4096):
-#appc:                                17m10s
-#python3 active:                      16m19s
-#dockerd active (25-75% wait):        18m40s
+# docker pull:                        4m15.088s
 
 # Format: {"cmd": "command", "args": ["arg1", ...]}
 
@@ -32,51 +30,29 @@ domain = args.domain
 
 init_complete = threading.Event()
 
-BUF_SIZE=4096
+BUF_SIZE=128*1024
 
 inflight = {}
 
-def iter_to_stream(iterable, buffer_size=io.DEFAULT_BUFFER_SIZE):
-    """
-    Lets you use an iterable (e.g. a generator) that yields bytestrings as a read-only
-    input stream.
-    """
-    class IterStream(io.RawIOBase):
-        def __init__(self):
-            self.leftover = None
-        def readable(self):
-            return True
-        def readinto(self, b):
-            try:
-                l = len(b)  # We're supposed to return at most this much
-                chunk = self.leftover or next(iterable)
-                output, self.leftover = chunk[:l], chunk[l:]
-                b[:len(output)] = output
-                return len(output)
-            except StopIteration:
-                return 0    # indicate EOF
-    return io.BufferedReader(IterStream(), buffer_size=buffer_size)
+#We replace docker_load here, since it has a short timeout, which means
+# it can only load very small images.
+assert(docker.version.startswith('1.9'))
+def docker_load(dclient, stream):
+    res = dclient._post(dclient._url("/images/load"),
+                        data=stream, timeout=(30, 600))
+    dclient._raise_for_status(res)
 
 def install_app(app):
     try:
         dclient = docker.from_env()
 
         inflight[app] = "Downloading app" ; print(inflight[app])
-        with open('/appscripts/' + app + ".tar.xz.part", "wb") as f:
-            r = requests.get(centralurl + "static/apps/" + app + ".tar.xz", stream=True)
-            for chunk in r.iter_content(chunk_size=4096):
-                if chunk:
-                    f.write(chunk)
-            os.rename('/appscripts/' + app + ".tar.xz.part",
-                      '/appscripts/' + app + ".tar.xz")
-            r.close()
-        #r = requests.get(centralurl + "static/apps/" + app + ".tar.xz", stream=True)
-        #fo = iter_to_stream(r.iter_content(chunk_size = BUF_SIZE),
-        #                        buffer_size = BUF_SIZE)
-        #dclient.load_image(lzma.open(fo, 'rb'))
-        #r.close()
-        #with open('/appscripts/' + app + ".tar.xz", "wb") as f:
-        #    f.write('') #XXX Even worse HACK!
+        r = requests.get(centralurl + "static/apps/" + app + ".tar.xz",
+                         stream=True)
+        docker_load(dclient, r.iter_content(chunk_size = BUF_SIZE))
+        r.close()
+        with open('/appscripts/' + app + ".tar.xz", "wb") as f:
+            f.write('') #XXX Even worse HACK!
 
         inflight[app] = "Installing app" ; print(inflight[app])
         r = requests.get(centralurl + "static/apps/start" + app)
@@ -87,6 +63,7 @@ def install_app(app):
         inflight[app] = "Application installed successfully"  ; print(inflight[app])
     except:
         print("Exception: %s %s %s" % sys.exc_info())
+        print(traceback.format_exc())
         inflight[app] = "ERROR %s %s" % (html.escape(str(sys.exc_info()[0])),
                                          html.escape(str(sys.exc_info()[1])))
 
@@ -139,6 +116,7 @@ def update_dyndns():
 
         except:
             print("Unexpected error while updating dyndns", sys.exc_info()[0])
+            print(traceback.format_exc())
 
         time.sleep(DYNDNS_INTERVAL)
 
