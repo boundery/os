@@ -18,7 +18,7 @@
       document.getElementById("results").innerHTML = (this.status == 200 ?
           "<p style=\"color:green\">Installing: " + this.responseText + "</p>" :
           "<p style=\"color:red\">Couldn't talk to your home server.  Make sure it is online and check ZeroTier setup on your client device.</p> " + this.status + " : " + this.responseText);
-      setTimeout(poll, 2000);
+      setTimeout(poll, 1000);
       /* XXX Stop polling when install is successful */
     }
   };

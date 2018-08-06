@@ -121,25 +121,12 @@ done
 USERNAME=`cat /tmp/username`
 APIKEY=`cat /tmp/apikey`
 
-#XXX /mnt/vol00/appscripts is a bad place, and this is a bad mechanism in general.
 echo Starting app store
-docker container create -t -v /mnt/vol00/appscripts:/appscripts -v /var/run/docker.sock:/var/run/docker.sock \
+docker container create -t -v /mnt/vol00/appsdir:/appsdir -v /var/run/docker.sock:/var/run/docker.sock \
        --name apps apps python3 ./appserver.py "https://boundery.me/" $APIKEY $USERNAME.boundery.me
 docker network connect --alias="apps-control" appscontrol apps
 docker network connect --alias="dnsd-control" dnsdcontrol apps
 docker container start apps
-( while true; do
-      if ls /mnt/vol00/appscripts/*.tar.xz >/dev/null 2>&1; then
-          for i in /mnt/vol00/appscripts/*.tar.xz; do
-              #docker load -i $i
-              BASE=`echo $i | cut -d'/' -f5 | cut -d'.' -f1`
-              bash /mnt/vol00/appscripts/start$BASE >> /tmp/appstart.log
-              rm $i
-              echo INSTALLED APP: $BASE
-          done
-      fi
-      sleep 5
-  done ) &
 
 #Start the haproxy system container
 echo Starting system haproxy

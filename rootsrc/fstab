@@ -3,7 +3,7 @@ sysfs            /sys            sysfs     nosuid,noexec,nodev
 proc             /proc           proc      nosuid,noexec,nodev
 devtmpfs         /dev            devtmpfs  nosuid,noexec,size=16k
 devpts           /dev/pts        devpts    nosuid,noexec,gid=5,mode=620,x-mount.mkdir=755
-tmpfs            /run            tmpfs     size=512k
+tmpfs            /run            tmpfs     size=1M
 tmpfs            /mnt            tmpfs     size=16k,shared
 tmpfs            /tmp            tmpfs     size=512k
 cgroup           /sys/fs/cgroup  tmpfs     size=16k,noauto,mode=0755
