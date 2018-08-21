@@ -45,6 +45,11 @@ init_complete = threading.Event()
 pub_ip = '0.0.0.0'
 inflight = {}
 
+def progress(app, msg, state, log = True):
+    inflight[app] = [state, msg]
+    if log:
+        print(inflight[app])
+
 #XXX Need to get a lot more paranoid about validating the .json.
 def start_container(appname, name, json):
     d = docker.from_env()
@@ -77,11 +82,15 @@ def start_container(appname, name, json):
             args['volumes'] = sds
 
         env = {'USERNAME': username, 'DOMAINNAME': domain}
+        for pair in json.get('env', []):
+            var, val = pair.split('=')
+            env[var] = val
         for net in nets:
             env[net.name.replace('-', '_') + "_SUBNET"] = net.attrs['IPAM']['Config'][0]['Subnet']
         args['environment'] = env
 
-        cont = d.containers.create(name, **args)
+        image_name = json.get('reuse', name)
+        cont = d.containers.create(image_name, **args)
 
         #Docker won't let you attach more than 1 container if attached to
         # 'none', so we explicitly disconnect it here.
@@ -124,7 +133,7 @@ def install_image(app, image, msg):
             s = 'Installing app component %s' % msg
             for k, v in stats.items():
                 s += '\n<br>%s' % v
-            inflight[app] = s
+            progress(app, s, 1, log=False)
 
     d.images.get(full_img).tag(image, tag='latest')
 
@@ -132,29 +141,31 @@ def install_app(app):
     try:
         app_cfgfile = app + ".json"
 
-        inflight[app] = "Downloading app description" ; print(inflight[app])
+        progress(app, "Downloading app description", 1)
         r = requests.get(centralurl + "static/apps/" + app_cfgfile)
         appj = r.json()
         raw_json = r.content
         r.close()
 
-        inflight[app] = "Installing app" ; print(inflight[app])
+        progress(app, "Installing app", 1)
         for i, img in enumerate(appj['containers']):
+            if 'reuse' in appj['containers'][img]:
+                print("Skipping %s-%s due to 'reuse'" % (app, img))
+                continue
             print("Installing image %s" % app + '-' + img)
             install_image(app, app + '-' + img, "%s of %s" % (i+1, len(appj['containers'])))
-        inflight[app] = "Application components installed successfully, starting" ; print(inflight[app])
+        progress(app, "Application components installed successfully, starting", 1)
 
         start_app(app, appj)
         with open('/appsdir/' + app_cfgfile, "wb") as f:
             f.write(raw_json)
-        inflight[app] = "Application started successfully" ; print(inflight[app])
+        progress(app, "Application started successfully", 100)
     except:
         #XXX Cleanup .json/images/networks/dnsd/etc.
-        #XXX Unset inflight[app] somewhere so user can try again.
         print("Exception: %s %s %s" % sys.exc_info())
         print(traceback.format_exc())
-        inflight[app] = "ERROR %s %s" % (html.escape(str(sys.exc_info()[0])),
-                                         html.escape(str(sys.exc_info()[1])))
+        progress(app,  "ERROR %s %s" % (html.escape(str(sys.exc_info()[0])),
+                                         html.escape(str(sys.exc_info()[1]))), -1)
 
 class AppsTCPHandler(socketserver.StreamRequestHandler):
     def handle(self):
@@ -168,15 +179,17 @@ class AppsTCPHandler(socketserver.StreamRequestHandler):
         if cmd == "install":
             app = args[0]
             if os.path.exists("/appsdir/" + app + ".json"):
-                self.wfile.write(("App %s is installed." % app).encode())
+                self.wfile.write('[100,"App is installed"]\n'.encode())
                 if app in inflight:
-                    del(inflight[app])
+                    del(inflight[app]) #General cleanliness.
             elif app in inflight:
-                self.wfile.write(inflight[app].encode())
+                self.wfile.write(json.dumps(inflight[app]).encode())
+                if inflight[app][0] < 0:
+                    del(inflight[app]) #Cleanup after failure so user can try again.
             else:
-                inflight[app] = 'Starting app install'
+                progress(app, 'Starting app install', 1)
                 threading.Thread(target=install_app, args=(app,), daemon=True).start()
-                self.wfile.write("Starting app install\n".encode())
+                self.wfile.write(json.dumps(inflight[app]).encode())
         else:
             self.wfile.write("unknown command\n".encode())
 

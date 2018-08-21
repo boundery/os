@@ -4,6 +4,8 @@ from gevent import monkey; monkey.patch_all()
 from bottle import run, route, request, response, static_file, template
 import requests, socket, os
 
+#XXX This needs to escape all user-supplied values that go into JSON/files.
+
 DOMAIN="https://boundery.me"
 
 def enable_cors():

@@ -506,7 +506,7 @@ qemu-run: $(RPI3_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
 	qemu-system-arm -nographic -M virt -kernel build/armhf/imgfs/zImage \
 	  -initrd build/armhf/imgfs/initrd -m 2048 -no-reboot \
-	  -hda build/armhf/images/rpi3image.bin
+	  -drive if=sd,id=sd0,file=build/armhf/images/rpi3image.bin -device generic-sdhci,drive=sd0
 else ifeq ($(ARCH), amd64)
 qemu-run: $(PC_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
