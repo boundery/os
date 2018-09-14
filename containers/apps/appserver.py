@@ -74,6 +74,7 @@ def start_container(appname, name, json):
 
         sds = {'/dev/log': {'bind':'/dev/log', 'mode':'rw'}}
         for guestd in json.get('storagedirs', []):
+            #XXX hostd must incorporate guestd for >1 storagedirs, a hash?
             hostd = '/mnt/vol00/appdata/%s/%s' % (appname,
                                                   name.strip('/').replace('/', '-'))
             os.makedirs(hostd, mode=0o700, exist_ok=True)

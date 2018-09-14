@@ -5,6 +5,17 @@ if [ -z "$ZEROTIER_TOKEN" ]; then
     exit 10
 fi
 
+if [ -d /mnt/var-lib-zerotier-one ]; then
+    chown -R zerotier-one.zerotier-one /mnt/var-lib-zerotier-one
+    if [ ! -L /var/lib/zerotier-one ]; then
+        cp -a /var/lib/zerotier-one/* /mnt/var-lib-zerotier-one/
+        rm -rf /var/lib/zerotier-one.bak
+        mv /var/lib/zerotier-one /var/lib/zerotier-one.bak
+        ln -sf /mnt/var-lib-zerotier-one /var/lib/zerotier-one
+        rm -rf /var/lib/zerotier-one.bak
+    fi
+fi
+
 /usr/sbin/zerotier-one &
 
 /zerotier_allow.py private
