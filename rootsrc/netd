@@ -286,12 +286,27 @@ if_startwpa() {
     local if=$1
 
     local conf=/boot/$if.conf
+    local wifitxt=/boot/wifi.txt
     local wpaconf=/run/wpa_supplicant.$if.conf
     local pidfile=$(pidfile wpa_supplicant $if)
 
     info starting wpa_supplicant on $if
     run cp /usr/local/etc/wpa_supplicant.conf $wpaconf
-    run -i$conf -ao$wpaconf mkwpaconf
+    if [ -r $conf ]; then
+        run -i$conf -ao$wpaconf mkwpaconf
+    elif [ -r $wifitxt ]; then
+        #Skip comments, blank lines, and leading/trailing whitespace.
+        grep -Po '^[^#]*' $wifitxt | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | \
+            grep -Pv '^[ \t]*$' > /tmp/wifi.txt
+        echo "network={" >> $wpaconf
+        echo "    ssid=\"`head -n1 /tmp/wifi.txt`\"" >> $wpaconf
+        echo "    psk=\"`tail -n1 /tmp/wifi.txt`\"" >> $wpaconf
+        echo "}" >> $wpaconf
+        rm /tmp/wifi.txt
+    else
+        echo "No wifi config in /boot/, skipping interface $if">&2
+        return 10
+    fi
     run wpa_supplicant -B -P$pidfile -i$if -c$wpaconf
 }
 
