@@ -3,7 +3,7 @@ ARG FROM_PREFIX
 FROM ${FROM_PREFIX}python3
 
 RUN    apt-get update \
-    && apt-get install -y python3-bottle python3-gevent \
+    && apt-get install -y --no-install-recommends python3-bottle python3-gevent \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /web/

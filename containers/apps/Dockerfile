@@ -5,7 +5,7 @@ FROM ${FROM_PREFIX}python3 as base
 FROM base as builder
 
 RUN    apt-get update \
-    && apt-get install -y python3-pip \
+    && apt-get install -y --no-install-recommends python3-pip \
     && pip3 install --no-cache docker \
     && rm -rf /var/lib/apt/lists/*
 
