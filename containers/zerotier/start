@@ -1,10 +1,5 @@
 #!/bin/sh
 
-if [ -z "$ZEROTIER_TOKEN" ]; then
-    echo "ZEROTIER_TOKEN not set!" >&2
-    exit 10
-fi
-
 if [ -d /mnt/var-lib-zerotier-one ]; then
     chown -R zerotier-one.zerotier-one /mnt/var-lib-zerotier-one
     if [ ! -L /var/lib/zerotier-one ]; then
@@ -16,8 +11,4 @@ if [ -d /mnt/var-lib-zerotier-one ]; then
     fi
 fi
 
-/usr/sbin/zerotier-one &
-
-/zerotier_allow.py private
-
-wait
+/usr/sbin/zerotier-one
