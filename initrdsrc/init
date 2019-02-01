@@ -27,8 +27,9 @@ add_layers() {
 
 add_layers rootfs
 # XXX debugging: add more layers
-#mount_layers python3
-#mount_layers storagemgr
+#add_layers python3
+#add_layers storagemgr
+#add_layers dnsd
 mount -toverlay overlay -olowerdir=${LAYERS%:} /newroot
 
 # XXX debugging: mount a writable overlay on top of /

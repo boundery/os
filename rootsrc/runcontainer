@@ -6,7 +6,7 @@ mounts="--mount=type=bind,src=/dev/log,dst=/dev/log"
 nets=""
 
 usage() {
-    echo "Usage: ${0##*/} [flags]    container [command ...]"
+    echo "Usage: ${0##*/} [flags] container [command ...]"
     echo "    -a arg                 pass arg to docker"
     echo "    -f                     run in foreground"
     echo "    -i                     attach stdin (default is detached)"
