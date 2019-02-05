@@ -407,21 +407,21 @@ web_clean:
 	$(SCRIPTDIR)/mkcontainer -c web '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
 
-APPS := $(IMGFSDIR)/layers/apps.off
-apps: $(APPS)
-$(APPS): $(PYTHON3) $(CONTAINERDIR)/apps/* $(SCRIPTDIR)/untar-docker-image
-	$(SCRIPTDIR)/mkcontainer -t apps '$(FROM_PREFIX)' \
-	  $(CONTAINERDIR)/apps $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
-CONTAINERS += $(APPS)
+APPSTORE := $(IMGFSDIR)/layers/appstore.off
+appstore: $(APPSTORE)
+$(APPSTORE): $(PYTHON3) $(CONTAINERDIR)/appstore/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t appstore '$(FROM_PREFIX)' \
+	  $(CONTAINERDIR)/appstore $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(APPSTORE)
 
-PHONY += apps_clean
-apps_clean:
-	$(SCRIPTDIR)/mkcontainer -c apps '$(FROM_PREFIX)' \
+PHONY += appstore_clean
+appstore_clean:
+	$(SCRIPTDIR)/mkcontainer -c appstore '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
 
 PHONY += fs_clean
 fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean \
-          haproxy_clean dnsd_clean certmgr_clean web_clean apps_clean
+          haproxy_clean dnsd_clean certmgr_clean web_clean appstore_clean
 	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs

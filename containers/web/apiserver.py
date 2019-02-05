@@ -59,7 +59,7 @@ def install_app_post():
 
     appname = request.forms.app
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(('apps', 9000))
+    s.connect(('appstore', 9000))
     s.sendall(('{"cmd": "install","args":["%s"]}\n' % appname).encode())
     resp = s.recv(1024).decode()
     s.close()

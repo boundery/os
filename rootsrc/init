@@ -146,10 +146,10 @@ fi
 
 echo Starting app store
 docker container create -t -v /mnt/vol00/appsdir:/appsdir -v /var/run/docker.sock:/var/run/docker.sock \
-       --name apps apps python3 ./appserver.py "https://boundery.me/" $APIKEY $USERNAME.boundery.me
-docker network connect --alias="apps-control" appscontrol apps
-docker network connect --alias="dnsd-control" dnsdcontrol apps
-docker container start apps
+       --name appstore appstore python3 ./appserver.py "https://boundery.me/" $APIKEY $USERNAME.boundery.me
+docker network connect --alias="apps-control" appscontrol appstore
+docker network connect --alias="dnsd-control" dnsdcontrol appstore
+docker container start appstore
 
 #Start the haproxy system container
 echo Starting system haproxy
@@ -158,7 +158,7 @@ docker run -d --name haproxy haproxy
 # XXX eventually this will be some form of getty
 setsid -cw bash -l
 
-docker kill apps
+docker kill appstore
 docker kill web
 docker kill dnsd
 docker kill zerotier
