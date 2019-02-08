@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from gevent import monkey; monkey.patch_all()
 
 from bottle import run, route, request, response, static_file, template
 import requests, socket, os
@@ -67,6 +66,6 @@ def install_app_post():
     return resp
 
 #XXX Switch this to https once we have a cert for it.
-#run(host='0.0.0.0', port=443, server='gevent',
+#run(host='0.0.0.0', port=443, server='waitress',
 #    certfile='server.crt', keyfile='server.key')
-run(host='0.0.0.0', port=80, server='gevent')
+run(host='0.0.0.0', port=80, server='waitress')
