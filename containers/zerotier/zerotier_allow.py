@@ -33,7 +33,7 @@ def zt_do(path, data = None):
     url = "http://localhost:9993/%s" % path
 
     try:
-        if data:
+        if data is not None:
             r = requests.post(url, headers = headers, data = json.dumps(data))
         else:
             r = requests.get(url, headers = headers)
