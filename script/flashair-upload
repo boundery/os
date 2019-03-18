@@ -35,3 +35,4 @@ for ent in `ls --group-directories-first | tac`; do
     fi
 done
 
+curl -s http://flashair/upload.cgi?DEL=/apikey
