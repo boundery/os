@@ -1,56 +1,14 @@
-#!/usr/bin/env python3
-
 import requests
 import json
 import os
 import sys
 import time
+from zerotier import zt_do, zt_get, zt_post
 
 if len(sys.argv) < 1:
     print("Usage: zerotier_allow.py <network name>")
     exit(-1)
 netname = sys.argv[1]
-
-# Get the "secret" authtoken for API authentication
-authtoken = None
-while True:
-    try:
-        with open("/var/lib/zerotier-one/authtoken.secret") as f:
-            # XXX is there a chance of a race with zerotier startup?
-            authtoken = f.read().strip()
-    except FileNotFoundError:
-        pass
-    if authtoken:
-        break
-    print("Waiting for zerotier authtoken to be created")
-    time.sleep(1)
-
-def zt_do(path, data = None):
-    headers = { 'Connection': 'close',
-                'Content-Type': 'application/json',
-                'X-ZT1-Auth': authtoken }
-
-    url = "http://localhost:9993/%s" % path
-
-    try:
-        if data is not None:
-            r = requests.post(url, headers = headers, data = json.dumps(data))
-        else:
-            r = requests.get(url, headers = headers)
-    except requests.exceptions.ConnectionError:
-	# Fail soft if daemon isn't running (yet)
-        return None
-
-    if r.status_code == 200 and len(r.text) != 0:
-        #print("'%s'" % r.text)
-        return r.json()
-    else:
-        return None
-
-def zt_get(path):
-    return zt_do(path)
-def zt_post(path, data):
-    return zt_do(path, data)
 
 #Wait for the daemon, and get our hostid.
 hostid = None
@@ -64,6 +22,9 @@ while True:
 print("Got host id: %s" % hostid)
 
 netid = None
+
+#Join the adhoc network.
+zt_post("network/ff05390539000000", {})
 
 #Check to see if network is already there.
 networks = zt_get("controller/network")
@@ -102,10 +63,10 @@ if not netid: #Create the network
     for ahost in os.getenv("ZEROTIER_AUTHORIZED_HOSTS", "").split():
         print("Authorizing host %s" % ahost)
         zt_post("controller/network/%s/member/%s" % (netid, ahost),
-                {'authorized': True, 'activeBridge': True})
+                {'authorized': True, 'activeBridge': False})
 
 #Join the network.  This is harmless if we're already a member.
-newjoin = os.system("/usr/sbin/zerotier-cli join %s" % netid) == 0
+zt_post("network/%s" % netid, {})
 
 #Poll until our request to join shows up.
 member = None
@@ -126,7 +87,3 @@ if member["authorized"] != True:
     }
     zt_post("controller/network/%s/member/%s" % (netid, hostid),
             newmember)
-
-#XXX Poll here checking if our local daemon is authorized and connected, if
-#    that doesn't happen in a reasonable amount of time, blow up, and the
-#    outer shell script can retry.

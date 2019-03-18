@@ -1,0 +1,24 @@
+#!/bin/sh
+
+while true; do
+    IPV6=`zerotier-cli listnetworks | grep ff05390539000000 | grep -Eo 'fc[0-9a-f:]+' | sed -E -e 's/:0+/:/g' -e 's/::+/::/g'`
+    if [ -n "$IPV6" ]; then
+        break
+    fi
+    sleep 1
+done
+while true; do
+    if ip -o addr show | grep -q "$IPV6"; then
+        break
+    fi
+    sleep 1
+done
+sleep 1
+#XXX Make sure iface w/ $IPV6 is up?  Or just loop starting socat?
+
+#XXX Debug
+ifconfig
+ip addr
+
+echo Listening on $IPV6 port 1337
+socat tcp6-listen:1337,reuseaddr,bind=$IPV6,fork exec:"python3 ./handle_client.py $1"

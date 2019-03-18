@@ -419,9 +419,22 @@ appstore_clean:
 	$(SCRIPTDIR)/mkcontainer -c appstore '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
 
+REGISTRATION := $(IMGFSDIR)/layers/registration.off
+registration: $(REGISTRATION)
+$(REGISTRATION): $(PYTHON3) $(CONTAINERDIR)/registration/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t registration '$(FROM_PREFIX)' \
+	  $(CONTAINERDIR)/registration $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(REGISTRATION)
+
+PHONY += registration_clean
+registration_clean:
+	$(SCRIPTDIR)/mkcontainer -c registration '$(FROM_PREFIX)' \
+	  $(FSDIR) $(IMGFSDIR)/layers
+
 PHONY += fs_clean
 fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean \
-          haproxy_clean dnsd_clean certmgr_clean web_clean appstore_clean
+          haproxy_clean dnsd_clean certmgr_clean web_clean appstore_clean \
+	  registration_clean
 	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs

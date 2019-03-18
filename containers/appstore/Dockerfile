@@ -14,6 +14,5 @@ FROM base
 COPY --from=builder /usr/local/lib/python3.5/dist-packages/ /usr/local/lib/python3.5/dist-packages/
 
 WORKDIR /appstore/
-COPY start appserver.py /appstore/
+COPY appserver.py /appstore/
 
-CMD ["/appstore/start"]

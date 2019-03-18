@@ -13,37 +13,6 @@ def enable_cors():
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
         response.headers['Vary'] = 'Origin'
 
-@route('/set_apikey', method='POST')
-def set_apikey():
-    #XXX should check with https://boundery.me and verify the username/apikey pair
-    enable_cors()
-    response.headers['Content-Type'] = 'application/json; charset=utf8'
-
-    with open('/apikey', 'w') as f:
-        f.write(request.forms.apikey)
-    with open('/username', 'w') as f:
-        f.write(request.forms.user)
-
-    return 'ok'
-
-#XXX This is a terrible hack.  But unfortunately we can't get an TLS cert
-#    before we get the API key, and browsers won't AJAX or POST to a http
-#    URL from an https page.
-@route('/set_apikey.png', method='GET')
-def set_apikeypng():
-    #XXX should have a token passed in that can be verified against https://boundery.me
-    #    since we have to use unsafe GETs here.
-    #XXX should check with https://boundery.me and verify the username/apikey pair
-    response.headers['Cache-Control'] = 'no-cache, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-
-    with open('/apikey', 'w') as f:
-        f.write(request.query.apikey)
-    with open('/username', 'w') as f:
-        f.write(request.query.user)
-
-    return static_file('trans1x1.png', root=os.getcwd())
-
 @route('/install_app', method='GET')
 def install_app():
     #XXX Setup some kind of magic token that we can verify with https://boundery.me/

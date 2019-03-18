@@ -7,7 +7,7 @@ RUN    apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /web/
-COPY start webserver.py trans1x1.png /web/
+COPY start webserver.py /web/
 COPY views/ /web/views/
 
 CMD ["/web/start"]

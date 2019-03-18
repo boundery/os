@@ -17,23 +17,38 @@ import threading, html, traceback
 
 # Format: {"cmd": "command", "args": ["arg1", ...]}
 
+USERINFO_POLL_INTERVAL=5
 DYNDNS_INTERVAL=180
 
 parser = argparse.ArgumentParser(description="Install and run apps")
 parser.add_argument("centralurl", help="URL to central")
 parser.add_argument("apikey", help="API key for central")
-parser.add_argument("domain", help="User's domain name")
+parser.add_argument("root_domain", help="Root domain name for user subdomains")
 args = parser.parse_args()
 
 centralurl = args.centralurl
 repo = args.centralurl.split('/')[2]
-api_key = args.apikey
-domain = args.domain
-username = domain.split('.')[0]
+apikey = args.apikey
+root_domain = args.root_domain
 
-assert(centralurl.endswith('/'))
+print("Getting userinfo")
+while True:
+    print(".", end='')
+    try:
+        req = requests.get(centralurl + '/api/v1/get_userinfo/',
+                               params = { "APIKEY": apikey })
+        if req.status_code == 200:
+            username = req.json()['username']
+            domain = username + '.' + root_domain
+            break
+    except requests.exceptions.RequestException as e:
+        pass
+    except:
+        print("Unexpected exception!")
+        pass
+    time.sleep(USERINFO_POLL_INTERVAL)
+print("success: %s" % username)
 
-#XXX Build system already knows this, so better to just plumb it in somehow.
 if os.uname().machine == 'x86_64':
     arch='amd64'
 elif os.uname().machine == 'armv7l':
@@ -143,7 +158,7 @@ def install_app(app):
         app_cfgfile = app + ".json"
 
         progress(app, "Downloading app description", 1)
-        r = requests.get(centralurl + "static/apps/" + app_cfgfile)
+        r = requests.get(centralurl + "/static/apps/" + app_cfgfile)
         appj = r.json()
         raw_json = r.content
         r.close()
@@ -208,8 +223,8 @@ def update_dyndns():
     while True:
         #Ping dyndns every DYNDNS_INTERVAL seconds
         try:
-            r = requests.get(centralurl + "api/v1/update_ip/?IP=%s&APIKEY=%s" %
-                             (pub_ip, api_key))
+            r = requests.get(centralurl + "/api/v1/update_ip/?IP=%s&APIKEY=%s" %
+                             (pub_ip, apikey))
             if r.status_code == 200:
                 ip = r.text
                 r.close()
