@@ -250,9 +250,13 @@ init_complete.wait()
 
 #Start up all installed apps.
 for app in os.scandir('/appsdir'):
-    with open(app.path, 'r') as f:
-        appj = json.load(f)
-    start_app(os.path.splitext(app.name)[0], appj)
+    try:
+        with open(app.path, 'r') as f:
+            appj = json.load(f)
+        start_app(os.path.splitext(app.name)[0], appj)
+    except Exception as e:
+        print("Error starting %s" % app)
+        print(traceback.format_exc())
 
 print("\nAppstore serving commands\n")
 server = socketserver.TCPServer(('', 9000), AppsTCPHandler)
