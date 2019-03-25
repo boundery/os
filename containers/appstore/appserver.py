@@ -31,23 +31,30 @@ repo = args.centralurl.split('/')[2]
 apikey = args.apikey
 root_domain = args.root_domain
 
-print("Getting userinfo")
-while True:
-    print(".", end='')
-    try:
-        req = requests.get(centralurl + '/api/v1/get_userinfo/',
-                               params = { "APIKEY": apikey })
-        if req.status_code == 200:
-            username = req.json()['username']
-            domain = username + '.' + root_domain
-            break
-    except requests.exceptions.RequestException as e:
-        pass
-    except:
-        print("Unexpected exception!")
-        pass
-    time.sleep(USERINFO_POLL_INTERVAL)
+print("Getting userinfo", end='')
+username = None
+try:
+    with open('/data/username', 'r') as f:
+        username = f.read().strip()
+if username is None:
+    while True:
+        print(".", end='')
+        try:
+            req = requests.get(centralurl + '/api/v1/get_userinfo/',
+                                   params = { "APIKEY": apikey })
+            if req.status_code == 200:
+                username = req.json()['username']
+                with open('/data/username', 'w') as f:
+                    f.write(username)
+                break
+            except requests.exceptions.RequestException as e:
+                pass
+            except:
+                print("Unexpected exception!")
+                pass
+            time.sleep(USERINFO_POLL_INTERVAL)
 print("success: %s" % username)
+domain = username + '.' + root_domain
 
 if os.uname().machine == 'x86_64':
     arch='amd64'
