@@ -512,6 +512,14 @@ img: pc_img
 endif
 
 ########################
+# Deploy images
+
+PHONY += deploy
+deploy: $(RPI3_ZIP)
+	@test $(SERVER)
+	scp $(RPI3_ZIP) root@$(SERVER):~/data/sslnginx/html/images/
+
+########################
 # Qemu emulation targets
 
 ifeq ($(ARCH), armhf)
