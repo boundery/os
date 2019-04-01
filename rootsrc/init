@@ -60,8 +60,8 @@ fi
 echo Starting zerotier
 chmod og+rw /dev/net/tun
 if [ -n "$usbstore" ]; then
-    mkdir -p /mnt/vol00/sysdata/zerotier/var-lib
-    MOUNT="-v /mnt/vol00/sysdata/zerotier/var-lib:/mnt/var-lib-zerotier-one"
+    mkdir -p /mnt/vol00/sysdata/zerotier/var-lib-zerotier-one
+    MOUNT="-v /mnt/vol00/sysdata/zerotier/var-lib-zerotier-one:/mnt/var-lib-zerotier-one"
 else
     echo "ERROR: No persistent storage for ZeroTier state!"
     #XXX Need a scheme to handle this!
@@ -133,6 +133,7 @@ while [ ! -s /boot/apikey ]; do
     sleep 5
 done
 mount -oremount,ro /boot
+sync -f /boot/apikey
 APIKEY=`cat /boot/apikey`
 if [ -z "$APIKEY" ]; then
     echo "Failed to get APIKEY"

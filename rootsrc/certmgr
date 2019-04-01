@@ -2,7 +2,7 @@
 
 dst="/etc/letsencrypt/accounts"
 vol="/mnt/vol00"
-src="$vol/certmgr$dst"
+src="$vol/sysdata/certmgr/`echo $dst | sed 's|/|-|g' | cut -c2-`"
 
 if [ ! -d "$src" ]; then
     if ! mountpoint -q "$vol"; then
