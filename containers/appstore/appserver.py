@@ -36,6 +36,8 @@ username = None
 try:
     with open('/data/username', 'r') as f:
         username = f.read().strip()
+except:
+    username = None
 if username is None:
     while True:
         print(".", end='')
@@ -47,12 +49,12 @@ if username is None:
                 with open('/data/username', 'w') as f:
                     f.write(username)
                 break
-            except requests.exceptions.RequestException as e:
-                pass
-            except:
-                print("Unexpected exception!")
-                pass
-            time.sleep(USERINFO_POLL_INTERVAL)
+        except requests.exceptions.RequestException as e:
+            pass
+        except:
+            print("Unexpected exception!")
+            pass
+        time.sleep(USERINFO_POLL_INTERVAL)
 print("success: %s" % username)
 domain = username + '.' + root_domain
 
