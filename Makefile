@@ -485,6 +485,7 @@ RPI3_ZIP := $(IMAGESDIR)/rpi3.zip
 rpi3_zip: $(RPI3_ZIP)
 $(RPI3_ZIP): $(IMG_DEPS)
 	@mkdir -p $(IMAGESDIR)
+	rm -f $(RPI3_ZIP)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
 	( cd $(IMGFSDIR) && zip -r $(RPI3_ZIP) * )
 
