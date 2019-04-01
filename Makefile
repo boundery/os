@@ -537,6 +537,14 @@ qemu-run: $(PC_IMG)
 endif
 PHONY += qemu-run
 
+########################
+# Tests/QA/linters
+
+PHONY += check
+check:
+	pyflakes3 `find . -name '*.py'`
+#XXX This misses +x python scripts that use #! whose names don't end in .py.
+
 .PHONY: $(PHONY)
 
 print-%: ; @echo $*=$($*)
