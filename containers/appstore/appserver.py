@@ -75,12 +75,16 @@ def progress(app, msg, state, log = True):
         print(inflight[app])
 
 #XXX Need to get a lot more paranoid about validating the .json.
+#XXX Let json.dumps generate json, instead of building it as strings.
 def start_container(appname, name, json):
     d = docker.from_env()
     try:
+        #XXX Renew certs if needed, also need to do that from a timer.
+        #XXX Need to do something so that apps can't steal each other's containers.
         cont = d.containers.get(name)
     except docker.errors.NotFound:
         nets = []
+        #XXX Need to do something so that apps can't steal each other's private networks.
         for netname in json.get('networks', []):
             try:
                 net = d.networks.get(netname)
@@ -96,6 +100,7 @@ def start_container(appname, name, json):
         if 'hostname' in json:
             args['hostname'] = json.get('hostname')
 
+        #XXX Watch out for ".." and friends in the appname/name/guestd name.
         sds = {'/dev/log': {'bind':'/dev/log', 'mode':'rw'}}
         for guestd in json.get('storagedirs', []):
             #XXX hostd must incorporate guestd for >1 storagedirs, a hash?
@@ -127,6 +132,7 @@ def start_container(appname, name, json):
     cont.reload() #So we get the IP address(es).
 
     #XXX Make sure different apps can't stomp on each other's names!
+    #XXX 'hostname' vs 'PRIVDNS'/'PUBDNS' is weird, unify?
     for privdns in json.get('PRIVDNS', []):
         #XXX These should be .int. subdomains.
         priv_ip = cont.attrs['NetworkSettings']['Networks']['private']['IPAddress']
@@ -142,6 +148,7 @@ def start_container(appname, name, json):
             dnsd_cmd('["add","%s","A","%s"]' % (recs[1], pub_ip))
 
 def start_app(app, json):
+    #XXX Thread this.
     for cname, cj in json['containers'].items():
         print("Starting container %s" % cname)
         start_container(app, app + '-' + cname, cj)
@@ -177,6 +184,7 @@ def install_app(app):
             if 'reuse' in appj['containers'][img]:
                 print("Skipping %s-%s due to 'reuse'" % (app, img))
                 continue
+            #XXX Thread this?
             print("Installing image %s" % app + '-' + img)
             install_image(app, app + '-' + img, "%s of %s" % (i+1, len(appj['containers'])))
         progress(app, "Application components installed successfully, starting", 1)
@@ -258,6 +266,7 @@ dyndns_thread.start()
 init_complete.wait()
 
 #Start up all installed apps.
+#XXX Parallelize this.
 for app in os.scandir('/apps'):
     try:
         with open(app.path, 'r') as f:
