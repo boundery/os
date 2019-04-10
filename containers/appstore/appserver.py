@@ -117,7 +117,12 @@ def start_container(appname, name, json):
             env[net.name.replace('-', '_') + "_SUBNET"] = net.attrs['IPAM']['Config'][0]['Subnet']
         args['environment'] = env
 
-        image_name = json.get('reuse', name)
+        if 'reuse' in json:
+            #XXX Validate that reuse is one of the other images in this app.
+            image_name = "%s-%s" % (appname, json['reuse'])
+        else:
+            image_name = name
+
         cont = d.containers.create(image_name, **args)
 
         #Docker won't let you attach more than 1 container if attached to
