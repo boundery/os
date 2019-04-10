@@ -182,7 +182,7 @@ def install_app(app):
         progress(app, "Application components installed successfully, starting", 1)
 
         start_app(app, appj)
-        with open('/appsdir/' + app_cfgfile, "wb") as f:
+        with open('/apps/' + app_cfgfile, "wb") as f:
             f.write(raw_json)
         progress(app, "Application started successfully", 100)
     except:
@@ -203,7 +203,7 @@ class AppsTCPHandler(socketserver.StreamRequestHandler):
         #XXX Exceptions.
         if cmd == "install":
             app = args[0]
-            if os.path.exists("/appsdir/" + app + ".json"):
+            if os.path.exists("/apps/" + app + ".json"):
                 self.wfile.write('[100,"App is installed"]\n'.encode())
                 if app in inflight:
                     del(inflight[app]) #General cleanliness.
@@ -258,7 +258,7 @@ dyndns_thread.start()
 init_complete.wait()
 
 #Start up all installed apps.
-for app in os.scandir('/appsdir'):
+for app in os.scandir('/apps'):
     try:
         with open(app.path, 'r') as f:
             appj = json.load(f)

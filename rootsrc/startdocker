@@ -46,7 +46,7 @@ if [ -d /var/lib/docker/overlay2 ]; then
     if [ "$dlayers" != "$layers" ]; then
         echo "Cached docker images are no longer valid, will reload images"
         (cd /var/lib/docker; ls -A | xargs -d'\n' rm -rf)
-        rm -f /mnt/vol00/appsdir/*
+        rm -f /mnt/vol00/apps/*
     fi
 fi
 
