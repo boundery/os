@@ -97,8 +97,7 @@ def start_container(appname, name, json):
         for hostp, guestp in json.get('expose', []):
             args.setdefault('ports', {})[hostp] = guestp
 
-        if 'hostname' in json:
-            args['hostname'] = json.get('hostname')
+        args['hostname'] = json.get('hostname')
 
         #XXX Watch out for ".." and friends in the appname/name/guestd name.
         sds = {'/dev/log': {'bind':'/dev/log', 'mode':'rw'}}
