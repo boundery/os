@@ -1,6 +1,6 @@
 import socketserver
-import sys, os, io, argparse, json, time, docker, requests, socket
-import threading, html, traceback
+import sys, os, argparse, json, time, docker, requests, socket
+import threading, html, traceback, subprocess
 
 #VIA INTERNET:
 #curl_https_to_dev_null:              0m25.746s
@@ -74,12 +74,38 @@ def progress(app, msg, state, log = True):
     if log:
         print(inflight[app])
 
+#XXX Need a thread to try call periodically to renew.
+#XXX Need to handle being rate limited here somehow.
+def get_cert(domain, keydir):
+    fullchain_path = os.path.join(keydir, 'fullchain.pem')
+    renew = os.path.exists(fullchain_path)
+    if renew and subprocess.run(['openssl', 'x509', '-checkend', str(30 * 86400),
+                           '-noout', '-in', fullchain_path]).returncode == 0:
+        return
+
+    print('getting cert for %s' % domain)
+    d = docker.from_env()
+    out = d.containers.run(command=[ 'certmgr',
+                                         '--fullchain', '/keys/fullchain.pem',
+                                         '--privkey', '/keys/privkey.pem',
+                                         "renew" if renew else "new", domain, ],
+                                image='certmgr', network='dnsdcontrol',
+                                stdout=True, stderr=True, auto_remove=True,
+                                volumes={ keydir: { 'bind':'/keys', 'mode':'rw' }, })
+    if json.loads(out.decode('us-ascii'))[0] != 0:
+        raise Exception("Couldn't create certificate: %s" % out)
+
 #XXX Need to get a lot more paranoid about validating the .json.
 #XXX Let json.dumps generate json, instead of building it as strings.
 def start_container(appname, name, json):
     d = docker.from_env()
+
+    if 'TLSCert' in json:
+        tlscert = json['TLSCert']
+        keydir = "/mnt/vol00/appcerts/%s/keys-%s" % (appname, name)
+        get_cert("%s.%s" % (json['hostname'], domain), keydir)
+
     try:
-        #XXX Renew certs if needed, also need to do that from a timer.
         #XXX Need to do something so that apps can't steal each other's containers.
         cont = d.containers.get(name)
     except docker.errors.NotFound:
@@ -101,6 +127,8 @@ def start_container(appname, name, json):
 
         #XXX Watch out for ".." and friends in the appname/name/guestd name.
         sds = {'/dev/log': {'bind':'/dev/log', 'mode':'rw'}}
+        if 'TLSCert' in json:
+            sds[keydir] = { 'bind':tlscert['keydir'], 'mode':'ro' }
         for guestd in json.get('storagedirs', []):
             hostd = '/mnt/vol00/appdata/%s/%s-%s' % (appname, name,
                                                          guestd.strip('/').replace('/', '-'))
@@ -187,13 +215,12 @@ def install_app(app):
             if 'reuse' in appj['containers'][img]:
                 print("Skipping %s-%s due to 'reuse'" % (app, img))
                 continue
-            #XXX Thread this?
             print("Installing image %s" % app + '-' + img)
             install_image(app, app + '-' + img, "%s of %s" % (i+1, len(appj['containers'])))
         progress(app, "Application components installed successfully, starting", 1)
 
         start_app(app, appj)
-        with open('/apps/' + app_cfgfile, "wb") as f:
+        with open('/mnt/vol00/apps/' + app_cfgfile, "wb") as f:
             f.write(raw_json)
         progress(app, "Application started successfully", 100)
     except:
@@ -214,7 +241,7 @@ class AppsTCPHandler(socketserver.StreamRequestHandler):
         #XXX Exceptions.
         if cmd == "install":
             app = args[0]
-            if os.path.exists("/apps/" + app + ".json"):
+            if os.path.exists("/mnt/vol00/apps/" + app + ".json"):
                 self.wfile.write('[100,"App is installed"]\n'.encode())
                 if app in inflight:
                     del(inflight[app]) #General cleanliness.
@@ -269,8 +296,7 @@ dyndns_thread.start()
 init_complete.wait()
 
 #Start up all installed apps.
-#XXX Parallelize this.
-for app in os.scandir('/apps'):
+for app in os.scandir('/mnt/vol00/apps'):
     try:
         with open(app.path, 'r') as f:
             appj = json.load(f)

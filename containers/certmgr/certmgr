@@ -6,6 +6,7 @@ import subprocess
 import sys
 import syslog
 import traceback
+import shutil, os, stat
 
 opts = None
 log = None
@@ -31,6 +32,12 @@ def parse_args(args = None):
     a.add_argument("-t", "--test",
                    action = "store_true",
                    help = "test mode, use staging server")
+    a.add_argument("-f", "--fullchain",
+                   action = "store",
+                   help = "file to store the fullchain certificate")
+    a.add_argument("-p", "--privkey",
+                   action = "store",
+                   help = "file to store the private key")
     a.add_argument("-v", "--verbose",
                    action = "count", default = 0,
                    help = "verbose, log more")
@@ -100,12 +107,22 @@ def newcert(domain):
     if out != "":
         log.verbose("output from certbot:\n%s" % (out))
 
+    cert = ''
+    key = ''
     if not opts.dryrun:
         d = "/etc/letsencrypt/live/" + domain
-        with open(d + "/fullchain.pem") as f:
-            cert = f.read()
-        with open(d + "/privkey.pem") as f:
-            key = f.read()
+        if 'fullchain' in opts:
+            shutil.copy(d + "/fullchain.pem", opts.fullchain)
+            os.chmod(opts.privkey, stat.S_IRUSR)
+        else:
+            with open(d + "/fullchain.pem") as f:
+                cert = f.read()
+        if 'fullchain' in opts:
+            shutil.copy(d + "/privkey.pem", opts.privkey)
+            os.chmod(opts.privkey, stat.S_IRUSR)
+        else:
+            with open(d + "/privkey.pem") as f:
+                key = f.read()
 
     return (0, (cert, key))
 

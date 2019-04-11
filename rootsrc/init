@@ -145,7 +145,9 @@ fi
 echo Starting app store
 mkdir -p /mnt/vol00/sysdata/appstore/data
 docker container create -t -v /mnt/vol00/sysdata/appstore/data:/data \
-       -v /mnt/vol00/apps:/apps -v /var/run/docker.sock:/var/run/docker.sock \
+       -v /mnt/vol00/appcerts:/mnt/vol00/appcerts \
+       -v /mnt/vol00/apps:/mnt/vol00/apps \
+       -v /var/run/docker.sock:/var/run/docker.sock \
        --name appstore appstore python3 ./appserver.py "https://boundery.me" "$APIKEY" boundery.me
 docker network connect --alias="apps-control" appscontrol appstore
 docker network connect --alias="dnsd-control" dnsdcontrol appstore
