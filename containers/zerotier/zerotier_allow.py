@@ -1,9 +1,7 @@
-import requests
-import json
 import os
 import sys
 import time
-from zerotier import zt_do, zt_get, zt_post
+from zerotier import zt_get, zt_post
 
 if len(sys.argv) < 1:
     print("Usage: zerotier_allow.py <network name>")

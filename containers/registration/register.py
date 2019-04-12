@@ -1,4 +1,4 @@
-import argparse, json, time, requests, base64
+import argparse, time, requests, base64
 from hkdf import hkdf_extract, hkdf_expand
 
 USERINFO_POLL_INTERVAL=5

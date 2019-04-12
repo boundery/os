@@ -1,6 +1,5 @@
 import requests
 import json
-import sys
 import time
 
 # Get the "secret" authtoken for API authentication

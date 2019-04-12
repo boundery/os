@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 
 from bottle import run, route, request, response, static_file, template
-import requests, socket, os
+import socket, os
 
 #XXX This needs to escape all user-supplied values that go into JSON/files.
+#XXX Use json.dumps, not strings for JSON.
 
 DOMAIN="https://boundery.me"
+
+@route('/static/<filename:path>')
+def send_static(filename):
+    return static_file(filename,
+                       root=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         'static'))
 
 def enable_cors():
     if request.headers['Origin'] in (DOMAIN, 'http://localhost:8000'):

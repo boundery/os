@@ -1,10 +1,7 @@
-import os
 import sys
 from libnacl.secret import SecretBox
-import libnacl
-import libnacl.utils
 from hkdf import hkdf_extract, hkdf_expand
-from zerotier import zt_do, zt_get, zt_post
+from zerotier import zt_get, zt_post
 
 if len(sys.argv) < 1:
     print("Usage: handle_client.py <network name>", file=sys.stderr)
