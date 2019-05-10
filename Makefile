@@ -487,7 +487,7 @@ $(RPI3_ZIP): $(IMG_DEPS)
 	@mkdir -p $(IMAGESDIR)
 	rm -f $(RPI3_ZIP)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
-	( cd $(IMGFSDIR) && zip -r $(RPI3_ZIP) * )
+	( cd $(IMGFSDIR) && zip -r $(RPI3_ZIP) * -x pairingkey wifi.txt )
 
 PHONY += rpi3_zip_clean
 rpi3_zip_clean:
