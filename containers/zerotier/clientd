@@ -13,12 +13,13 @@ while true; do
     fi
     sleep 1
 done
-sleep 1
-#XXX Make sure iface w/ $IPV6 is up?  Or just loop starting socat?
 
-#XXX Debug
+#XXX Debug remove once reliable.
 ifconfig
 ip addr
 
-echo Listening on $IPV6 port 1337
-socat tcp6-listen:1337,reuseaddr,bind=$IPV6,fork exec:"python3 ./handle_client.py $1"
+while true; do
+    echo Listening on $IPV6 port 1337
+    socat tcp6-listen:1337,reuseaddr,bind=$IPV6,fork exec:"python3 ./handle_client.py $1"
+    sleep 1
+done
