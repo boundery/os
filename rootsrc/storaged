@@ -543,7 +543,7 @@ log() {
         echo "$*"
         return
     fi
-    logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
+    logger -pdaemon."$prio" -t"$progname" "$*"
 }
 
 error() {
@@ -571,7 +571,7 @@ run() {
     local status
     if [ "$dflag" ]; then
         # this is how to get the exit status, don't ask
-        status=`(("$@" 9>&-; echo $? >&9) 2>&1 | logger -pdaemon.info -t"$1" --id=$$) 9>&1`
+        status=`(("$@" 9>&-; echo $? >&9) 2>&1 | logger -pdaemon.info -t"$1") 9>&1`
     else
         "$@"
         status=$?

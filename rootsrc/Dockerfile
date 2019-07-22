@@ -9,9 +9,9 @@ COPY *.pub /keys/
 
 RUN    apt-get update \
     && apt-get install -y --no-install-recommends gnupg apt-transport-https ca-certificates \
-    && if [ "$ARCH" = armhf ]; then \
+    && if [ "$ARCH" = armhf -o "$ARCH" = arm64 ]; then \
            apt-key add /keys/raspbian.pub \
-        && echo 'deb http://archive.raspberrypi.org/debian/ stretch main' \
+        && echo 'deb [arch=armhf] http://archive.raspberrypi.org/debian/ stretch main' \
                 >/etc/apt/sources.list.d/raspbian.list \
         && apt-get update \
         && apt-get install -y --no-install-recommends firmware-brcm80211 \

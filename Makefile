@@ -15,13 +15,15 @@ SHELL=/bin/bash #tarfile signature checking uses process redirection.
 DEBIAN_RELEASE := stretch
 
 KERNEL_VERSION = 4.14.30
-UBOOT_VERSION = 2017.09
+UBOOT_VERSION = 2017.11
 BOOTFW_VERSION = 1.20170811
 BUSYBOX_VERSION = 1.28.0-uclibc
+ZEROTIER1_VERSION = 1.2.12
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-$(UBOOT_VERSION).tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
+ZEROTIER1_URL=http://github.com/zerotier/ZeroTierOne/archive/$(ZEROTIER1_VERSION).tar.gz
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -30,7 +32,7 @@ BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.
 ARCHS := #Needed so ARCHS+=$(ARCH) expands $(ARCH) immediately, not recursively.
 ARM_TARGETS:=rpi3_img rpi3_zip rip3_zip_clean rpi3_img_clean chip_img chip_img_clean
 ifneq ($(filter $(ARM_TARGETS), $(MAKECMDGOALS)),)
-override ARCH:=armhf
+override ARCH:=arm64
 ARCHS+=$(ARCH)
 endif
 AMD64_TARGETS:=pc_img pc_img_clean
@@ -45,17 +47,26 @@ else ifeq ($(ARCH), armhf)
 KERNEL_ARCH=arm
 KERNEL_IMG=zImage
 KERNEL_EXTRAS=dtbs
-SERIAL_TTY=ttyAMA0
 UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
 BOOT_MNT=/dev/mmcblk0p1
 CROSS_PREFIX=arm-linux-gnueabihf-
 FROM_PREFIX=arm32v7/
+QEMU_ARCH=arm
+else ifeq ($(ARCH), arm64)
+KERNEL_ARCH=arm64
+KERNEL_IMG=Image
+KERNEL_EXTRAS=dtbs
+UBOOT_ARCH=arm
+UBOOT_IMG=u-boot.bin
+BOOT_MNT=/dev/mmcblk0p1
+CROSS_PREFIX=aarch64-linux-gnu-
+FROM_PREFIX=arm64v8/
+QEMU_ARCH=aarch64
 else ifeq ($(ARCH), amd64)
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
 KERNEL_EXTRAS=
-SERIAL_TTY=ttyS0
 BOOT_MNT=LABEL=ISOLINUX
 CROSS_PREFIX=
 FROM_PREFIX=
@@ -102,10 +113,11 @@ INITRDDIR := $(BUILDDIR)/initrd
 FSDIR := $(BUILDDIR)/fs
 OSFSDIR := $(FSDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
+ZEROTIER1DIR := $(BUILDDIR)/zerotier-one
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
 
-ifeq ($(ARCH), armhf)
+ifeq ($(ARCH:arm%=),)
 UBOOTDIR := $(BUILDDIR)/uboot
 BOOTFWDIR := $(BUILDDIR)/bootfw
 endif
@@ -126,7 +138,7 @@ $(error Run "sudo script/qemu-arm-static.sh")
 endif
 
 #Make sure docker experimental is enabled for "docker build --squash"
-ifneq ($(shell docker info 2>/dev/null | grep -c '^Experimental: true'),1)
+ifneq ($(shell docker info 2>/dev/null | grep -c '^\s*Experimental: true'),1)
 $(error Enable "experimental" in /etc/docker/daemon.json)
 endif
 
@@ -166,8 +178,12 @@ $(KERNEL): $(KERNEL_PATCH)
 	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	  $(KERNEL_IMG) modules $(KERNEL_EXTRAS) )
 
-ifeq ($(ARCH), armhf)
+ifeq ($(ARCH:arm%=),)
+ifeq ($(ARCH),armhf)
 KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2837-rpi-3-b.dtb
+else
+KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom/bcm2837-rpi-3-b.dtb
+endif
 kernel_dtb: $(KERNEL_DTB)
 $(KERNEL_DTB): $(KERNEL)
 endif
@@ -187,7 +203,7 @@ PHONY += kernel_clean
 kernel_clean:
 	rm -rf $(KERNELDIR)
 
-ifeq ($(ARCH), armhf) # {
+ifeq ($(ARCH:arm%=),) # {
 
 UBOOT_SRC := $(UBOOTDIR)/Makefile
 uboot_src: $(UBOOT_SRC)
@@ -238,7 +254,7 @@ bootfw_clean:
 
 UBOOT_ENV := $(IMGFSDIR)/uboot.env
 uboot_env: $(UBOOT_ENV)
-$(UBOOT_ENV): $(SRCDIR)/rpi/ubootenv
+$(UBOOT_ENV): $(SRCDIR)/rpi/$(ARCH)_ubootenv
 	@mkdir -p $(IMGFSDIR)
 	mkenvimage -o$(UBOOT_ENV) -s16384 -p0 $<
 
@@ -246,7 +262,38 @@ PHONY += uboot_env_clean
 uboot_env_clean:
 	rm -f $(UBOOT_ENV)
 
+CONFIG_TXT := $(IMGFSDIR)/config.txt
+config_txt: $(CONFIG_TXT)
+$(CONFIG_TXT): $(SRCDIR)/rpi/$(ARCH)_config.txt
+	@mkdir -p $(IMGFSDIR)
+	cp $< $(CONFIG_TXT)
+
+PHONY += config_txt_clean
+config_txt_clean:
+	rm -f $(CONFIG_TXT)
+
 endif # }
+
+ZEROTIER1_SRC := $(ZEROTIER1DIR)/Makefile
+zerotier1_src: $(ZEROTIER1_SRC)
+$(ZEROTIER1_SRC):
+	@mkdir -p $(ZEROTIER1DIR)
+	wget -qO- $(ZEROTIER1_URL) | \
+	  tar --strip-components=1 -xz -C $(ZEROTIER1DIR)
+
+ZEROTIER1 = $(ZEROTIER1DIR)/zerotier-one
+zerotier1: $(ZEROTIER1)
+$(ZEROTIER1): $(ZEROTIER1_SRC)
+	( cd $(ZEROTIER1DIR); \
+	  $(MAKE) CC=$(CROSS_PREFIX)gcc \
+	          CXX=$(CROSS_PREFIX)g++ \
+		  STRIP=$(CROSS_PREFIX)strip \
+		  zerotier-one \
+	)
+
+PHONY += zerotier1_clean
+zerotier1_clean:
+	rm -rf $(ZEROTIER1DIR)
 
 INITRD := $(IMGFSDIR)/initrd
 initrd: $(INITRD)
@@ -340,15 +387,23 @@ storagemgr_clean:
 
 ZEROTIER := $(IMGFSDIR)/layers/zerotier.off
 zerotier: $(ZEROTIER)
-$(ZEROTIER): $(PYTHON3) $(CONTAINERDIR)/zerotier/* $(SCRIPTDIR)/untar-docker-image
+$(ZEROTIER): $(PYTHON3) $(CONTAINERDIR)/zerotier/*  $(ZEROTIER1) \
+             $(SCRIPTDIR)/untar-docker-image
+	mkdir -p $(BUILDDIR)/zerotier
+	rsync -a --delete \
+	      $(CONTAINERDIR)/zerotier/. \
+	      $(ZEROTIER1) \
+	      $(BUILDDIR)/zerotier
 	$(SCRIPTDIR)/mkcontainer -t zerotier '$(FROM_PREFIX)' \
-	  $(CONTAINERDIR)/zerotier $(FSDIR) $(IMGFSDIR)/layers '$(DOCKER_BUILD_PROXY)'
+	  $(BUILDDIR)/zerotier $(FSDIR) $(IMGFSDIR)/layers \
+	  '$(DOCKER_BUILD_PROXY)'
 CONTAINERS += $(ZEROTIER)
 
 PHONY += zerotier_clean
 zerotier_clean:
 	$(SCRIPTDIR)/mkcontainer -c zerotier '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
+	rm -rf $(BUILDDIR)/zerotier
 
 HAPROXY := $(IMGFSDIR)/layers/haproxy.off
 haproxy: $(HAPROXY)
@@ -459,13 +514,13 @@ IMG_DEPS = \
 	$(SQUASHFS) \
 	$(filter-out %/. %.., $(wildcard $(DEVELDIR)/imgfs/.*)) \
 	$(wildcard $(DEVELDIR)/imgfs/*)
-ifeq ($(ARCH), armhf)
+ifeq ($(ARCH:arm%=),)
 IMG_DEPS += \
 	$(KERNEL_DTB) \
 	$(UBOOT) \
 	$(UBOOT_ENV) \
 	$(BOOTFW) \
-	$(SRCDIR)/rpi/config.txt
+	$(CONFIG_TXT)
 else ifeq ($(ARCH), amd64)
 IMG_DEPS += $(SRCDIR)/pc/grub.cfg
 endif
@@ -475,7 +530,7 @@ rpi3_img: $(RPI3_IMG)
 $(RPI3_IMG): $(IMG_DEPS) $(SCRIPTDIR)/mkfatimg
 	@mkdir -p $(IMAGESDIR)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
-	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 192 $(IMGFSDIR)/*
+	$(SCRIPTDIR)/mkfatimg $(RPI3_IMG) 256 $(IMGFSDIR)/*
 
 PHONY += rpi3_img_clean
 rpi3_img_clean:
@@ -506,7 +561,7 @@ PHONY += pc_img_clean
 pc_img_clean:
 	rm $(PC_IMG)
 
-ifeq ($(ARCH), armhf)
+ifeq ($(ARCH:arm%=),)
 img: rpi3_img
 else ifeq ($(ARCH), amd64)
 img: pc_img
@@ -523,12 +578,13 @@ deploy: $(RPI3_ZIP)
 ########################
 # Qemu emulation targets
 
-ifeq ($(ARCH), armhf)
+ifeq ($(ARCH:arm%=),)
 qemu-run: $(RPI3_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
-	qemu-system-arm -nographic -M virt -kernel build/armhf/imgfs/zImage \
-	  -initrd build/armhf/imgfs/initrd -m 2048 -no-reboot \
-	  -drive if=sd,id=sd0,file=build/armhf/images/rpi3image.bin -device generic-sdhci,drive=sd0
+	qemu-system-$(QEMU_ARCH) -nographic -M virt \
+	  -kernel $(IMGFSDIR)/$(KERNEL_IMG) \
+	  -initrd $(INITRD) -m 2048 -no-reboot \
+	  -drive if=sd,id=sd0,file=$(RPI3_IMG) -device generic-sdhci,drive=sd0
 else ifeq ($(ARCH), amd64)
 qemu-run: $(PC_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"

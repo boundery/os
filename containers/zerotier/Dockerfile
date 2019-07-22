@@ -10,5 +10,6 @@ RUN    apt-key add /zt-gpg-key \
     && rm -rf /var/lib/apt/lists/*
 
 COPY start clientd zerotier.py zerotier_allow.py handle_client.py /
+COPY zerotier-one /usr/sbin
 
 CMD ["/start"]

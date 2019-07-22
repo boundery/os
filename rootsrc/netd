@@ -470,7 +470,7 @@ log() {
         echo "$*"
         return
     fi
-    logger -pdaemon."$prio" -t"$progname" --id=$$ "$*"
+    logger -pdaemon."$prio" -t"$progname" "$*"
 }
 
 error() {
