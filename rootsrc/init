@@ -23,6 +23,13 @@ while read line; do
     [ -z "$line" ] || modprobe $line
 done </etc/modules
 
+# XXX debugging: fix files masked by overlays (see initrdsrc/init)
+#chmod og+rw /dev/net/tun
+#echo 'ntpd:x:101:101::/var/run/openntpd:/bin/false' >> /etc/passwd
+#echo 'ntpd:x:101:' >> /etc/group
+#echo 'docker:x:999:' >> /etc/group
+#echo 'netdev:x:102:' >> /etc/group
+
 (netd &)
 
 # Bring up mdev to run storage manager
@@ -66,26 +73,12 @@ else
     echo "ERROR: No persistent storage for ZeroTier state!"
     #XXX Need a scheme to handle this!
 fi
-
 docker run --rm -d --net=host \
        --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun \
        $MOUNT -v /boot/pairingkey:/pairingkey --name zerotier zerotier /start private
-# Run this in the foreground (for now) so we can see the network id.
-# Also, it makes zerotier startup more sychronous, which is nice.
-docker exec -it \
-       -e ZEROTIER_AUTHORIZED_HOSTS="$ZEROTIER_AUTHORIZED_HOSTS" \
-       zerotier python3 /zerotier_allow.py private
-
-while true; do
-    ZTIF=`ip -o address | grep -Eo '^[0-9]+: zt.+ +inet +172\.18\.0\.1/' | cut -d' ' -f2`
-    if [ -n "$ZTIF" ]; then
-        echo "Zerotier interface $ZTIF"
-        break;
-    fi
-    echo "Waiting for Zerotier interface to appear..."
-    sleep 1
-done
-BOOTSTRAP_IPV6=`ip -o address | grep -Eo '^[0-9]+: zt.+ +inet6 fc[0-9a-f:]+/40 scope global' | grep -v " $ZTIF " | awk '{print $4}' | cut -d'/' -f1`
+x="`docker exec zerotier python3 /zerotier_allow.py private`"
+ZTIF="${x%% *}"
+BOOTSTRAP_IPV6="${x##* }"
 
 #Start registration container if needed.
 if [ ! -s /boot/apikey ]; then
@@ -160,6 +153,7 @@ docker run -d --name haproxy haproxy
 # XXX eventually this will be some form of getty
 setsid -cw bash -l
 
+docker kill haproxy
 docker kill appstore
 docker kill web
 docker kill dnsd
