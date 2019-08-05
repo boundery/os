@@ -14,7 +14,7 @@ SHELL=/bin/bash #tarfile signature checking uses process redirection.
 
 DEBIAN_RELEASE := stretch
 
-KERNEL_VERSION = 4.14.30
+KERNEL_VERSION = 4.14.136
 UBOOT_VERSION = 2017.11
 BOOTFW_VERSION = 1.20170811
 BUSYBOX_VERSION = 1.28.0-uclibc

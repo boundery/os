@@ -40,11 +40,15 @@ index 035cd3f..87c91f7 100644
  	if (test_and_set_bit_lock(EXT4_FLAGS_RESIZING,
  				  &EXT4_SB(sb)->s_ext4_flags))
  		ret = -EBUSY;
-@@ -2015,6 +2024,8 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
+@@ -2015,10 +2024,11 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
  		free_flex_gd(flex_gd);
  	if (resize_inode != NULL)
  		iput(resize_inode);
--	ext4_msg(sb, KERN_INFO, "resized filesystem to %llu", n_blocks_count);
+ 	if (err)
+ 		ext4_warning(sb, "error (%d) occurred during "
+ 			     "file system resize", err);
+-	ext4_msg(sb, KERN_INFO, "resized filesystem to %llu",
+-		 ext4_blocks_count(es));
 +	if (!err)
 +		ext4_msg(sb, KERN_INFO, "resized filesystem to %llu",
 +			 n_blocks_count);
