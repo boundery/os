@@ -164,7 +164,9 @@ $(KERNEL_SRC):
 	wget -qO- $(KERNEL_URL) | xz -cd | \
 	  tee >(tar --strip-components=1 -x -C $(KERNELDIR)) | \
 	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
-	  --verify $(SIGDIR)/linux-$(KERNEL_VERSION).tar.sign -
+	  --verify $(SIGDIR)/linux-$(KERNEL_VERSION).tar.sign - && \
+	  [ `echo "$${PIPESTATUS[@]}" | tr -s ' ' + | bc` -eq 0 ] || \
+	  ( rm -rf $(KERNELDIR) && false )
 
 KERNEL_PATCH := $(KERNELDIR)/.config
 kernel_patch: $(KERNEL_PATCH)
@@ -211,7 +213,10 @@ $(UBOOT_SRC):
 	@mkdir -p $(UBOOTDIR)
 	wget -qO- $(UBOOT_URL) | tee >(tar --strip-components=1 -xj -C $(UBOOTDIR)) | \
 	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
-	  --verify $(SIGDIR)/u-boot-$(UBOOT_VERSION).tar.bz2.sig -
+	  --verify $(SIGDIR)/u-boot-$(UBOOT_VERSION).tar.bz2.sig - && \
+	  [ `echo "$${PIPESTATUS[@]}" | tr -s ' ' + | bc` -eq 0 ] || \
+	  ( rm -rf $(UBOOTDIR) && false )
+
 
 UBOOT_PATCH := $(UBOOTDIR)/.config
 uboot_patch: $(UBOOT_PATCH)
