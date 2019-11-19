@@ -555,7 +555,9 @@ $(PC_IMG): $(IMG_DEPS)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
 	mkdir -p $(IMGFSDIR)/boot/grub
 	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
-	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
+	dd if=/dev/zero of=$(IMGFSDIR)/SPACER bs=4096 count=1024 #HACK to make room for apikey
+	grub-mkrescue -volid $(subst LABEL=,,$(BOOT_MNT)) -o $(PC_IMG) $(IMGFSDIR)
+	@rm $(IMGFSDIR)/SPACER
 
 PHONY += pc_img_clean
 pc_img_clean:
@@ -589,7 +591,7 @@ else ifeq ($(ARCH), amd64)
 qemu-run: $(PC_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
 	qemu-system-x86_64 -enable-kvm -nographic -m 2048 \
-	  -hda build/amd64/images/pcimage.bin
+	  -hda $(PC_IMG)
 endif
 PHONY += qemu-run
 

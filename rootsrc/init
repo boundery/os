@@ -75,17 +75,18 @@ else
 fi
 docker run --rm -d --net=host \
        --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun \
-       $MOUNT -v /boot/pairingkey:/pairingkey --name zerotier zerotier /start private
+       $MOUNT -v /boot/pairingkey:/pairingkey:ro --name zerotier zerotier /start private
 x="`docker exec zerotier python3 /zerotier_allow.py private`"
 ZTIF="${x%% *}"
 BOOTSTRAP_IPV6="${x##* }"
 
 #Start registration container if needed.
 if [ ! -s /boot/apikey ]; then
-    mount -oremount,rw /boot
+    mount -oremount,rw,force /boot
+    rm -f /boot/SPACER
     touch /boot/apikey
     docker run --rm -v /boot/apikey:/apikey \
-           -v /boot/pairingkey:/pairingkey \
+           -v /boot/pairingkey:/pairingkey:ro \
            --name registration registration \
            python3 ./register.py "https://boundery.me" $BOOTSTRAP_IPV6 &
 fi
