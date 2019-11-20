@@ -179,6 +179,7 @@ kernel: $(KERNEL)
 $(KERNEL): $(KERNEL_PATCH)
 	( cd $(KERNELDIR); $(MAKE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(CROSS_PREFIX) \
 	  $(KERNEL_IMG) modules $(KERNEL_EXTRAS) )
+	@touch $(KERNEL) #So rule doesn't keep running.
 
 ifeq ($(ARCH:arm%=),)
 ifeq ($(ARCH),armhf)
