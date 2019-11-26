@@ -1,0 +1,16 @@
+#!/bin/bash
+
+if [ ! -f "$1" ]; then
+    echo Usage: $0 path/to/keyfile.asc >&2
+    exit 99
+fi
+
+PUBRING="$(readlink -f "$(dirname "$(readlink -f "$0")")/pubring.gpg")"
+
+gpg --no-default-keyring --keyring "$PUBRING" --import "$1"
+rm "$PUBRING"~
+
+#XXX Is this ownertrust part needed?
+#echo echo AB9942E6D4A4CFC3412620A749FC7012A5DE03AE:6: | gpg2 --homedir . --import-ownertrust
+#echo XXX replace AB99... with real key.
+#echo XXX then rm any spam files.

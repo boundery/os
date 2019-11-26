@@ -19,11 +19,13 @@ UBOOT_VERSION = 2017.11
 BOOTFW_VERSION = 1.20170811
 BUSYBOX_VERSION = 1.28.0-uclibc
 ZEROTIER1_VERSION = 1.2.12
+WIREGUARD_VERSION = 0.0.20191012
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-$(UBOOT_VERSION).tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
 ZEROTIER1_URL=http://github.com/zerotier/ZeroTierOne/archive/$(ZEROTIER1_VERSION).tar.gz
+WIREGUARD_URL=https://git.zx2c4.com/WireGuard/snapshot/WireGuard-$(WIREGUARD_VERSION).tar.xz
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -114,6 +116,7 @@ FSDIR := $(BUILDDIR)/fs
 OSFSDIR := $(FSDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
 ZEROTIER1DIR := $(BUILDDIR)/zerotier-one
+WIREGUARDDIR := $(BUILDDIR)/WireGuard
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
 
@@ -156,6 +159,23 @@ all_clean:
 PHONY += clean
 clean: fs_clean initrd_clean
 	rm -rf $(BUILDDIR)
+
+WIREGUARD_SRC := $(WIREGUARDDIR)/contrib/kernel-tree/create-patch.sh
+wireguard_src: $(WIREGUARD_SRC)
+$(WIREGUARD_SRC):
+	@mkdir -p $(WIREGUARDDIR)
+	wget -qO- $(WIREGUARD_URL) | xz -cd | \
+	  tee >(tar --strip-components=1 -x -C $(WIREGUARDDIR)) | \
+	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
+	  --verify $(SIGDIR)/WireGuard-$(WIREGUARD_VERSION).tar.asc - && \
+	  [ `echo "$${PIPESTATUS[@]}" | tr -s ' ' + | bc` -eq 0 ] || \
+	  ( rm -rf $(WIREGUARDDIR) && false )
+
+PHONY += wireguard_patch
+WIREGUARD_PATCH := $(PATCHDIR)/linux/wireguard.patch
+wireguard_patch: $(WIREGUARD_PATCH)
+$(WIREGUARD_PATCH): $(WIREGUARD_SRC)
+	$(WIREGUARD_SRC) > $(WIREGUARD_PATCH)
 
 KERNEL_SRC := $(KERNELDIR)/Makefile
 kernel_src: $(KERNEL_SRC)
