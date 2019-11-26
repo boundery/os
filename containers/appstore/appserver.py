@@ -62,6 +62,8 @@ if os.uname().machine == 'x86_64':
     arch='amd64'
 elif os.uname().machine == 'armv7l':
     arch='arm32v7'
+elif os.uname().machine == 'aarch64':
+    arch='arm64v8'
 else:
     assert(False)
 
