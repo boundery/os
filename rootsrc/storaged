@@ -294,6 +294,14 @@ unmountall() {
     return 0
 }
 
+get_dname() {
+    if egrep -qs '/dev/sda[0-9]? /boot' /proc/mounts; then
+        echo "sdb1"
+    else
+        echo "sda1"
+    fi
+}
+
 init() {
     local stage="$1"
 
@@ -306,7 +314,7 @@ init() {
 }
 
 init0() {
-    local dname="sda1"
+    local dname="`get_dname`"
     local dev="/dev/$dname"
     local mnt="/mnt/$dname"
     local dir="$mnt/$spath"
@@ -338,7 +346,7 @@ init0() {
 }
 
 init1() {
-    local dname="sda1"
+    local dname="`get_dname`"
     local dev="/dev/$dname"
     local mnt="/mnt/$dname"
     local dir="$mnt/$spath"

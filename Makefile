@@ -606,18 +606,28 @@ deploy: $(RPI3_ZIP)
 ########################
 # Qemu emulation targets
 
+TMP_USB_IMG=/tmp/usb.img
+tmp-usb-img: $(TMP_USB_IMG)
+$(TMP_USB_IMG):
+	$(SCRIPTDIR)/mkfatimg $(TMP_USB_IMG) 512
+
 ifeq ($(ARCH:arm%=),)
-qemu-run: $(RPI3_IMG)
+#XXX 2ndary storage is broken, since raspi3 doesn't have USB host or virtio. And
+#    virt doesn't have sdcard.  Might be able to add some rename rules to mdev or
+#    something to workaround sda vs mmcblk...
+#XXX Try this with uboot for -kernel + no -initrd/-dtb/-append...
+qemu-run: $(RPI3_IMG) $(TMP_USB_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
-	qemu-system-$(QEMU_ARCH) -nographic -M virt \
-	  -kernel $(IMGFSDIR)/$(KERNEL_IMG) \
-	  -initrd $(INITRD) -m 2048 -no-reboot \
-	  -drive if=sd,id=sd0,file=$(RPI3_IMG) -device generic-sdhci,drive=sd0
+	qemu-system-$(QEMU_ARCH) -M raspi3 -nographic \
+	  -kernel $(IMGFSDIR)/$(KERNEL_IMG) -initrd $(INITRD) \
+	  -dtb $(IMGFSDIR)/bcm2837-rpi-3-b.dtb \
+	  -m 1024 -no-reboot -append "8250.nr_uarts=1 console=tty1 console=ttyAMA0,115200" \
+	  -drive file=$(RPI3_IMG),if=sd,format=raw -drive file=$(TMP_USB_IMG),if=virtio,format=raw
 else ifeq ($(ARCH), amd64)
-qemu-run: $(PC_IMG)
+qemu-run: $(PC_IMG) $(TMP_USB_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
 	qemu-system-x86_64 -enable-kvm -nographic -m 2048 \
-	  -hda $(PC_IMG)
+	  -hda $(PC_IMG) -hdb $(TMP_USB_IMG)
 endif
 PHONY += qemu-run
 
