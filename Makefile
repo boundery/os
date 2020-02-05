@@ -32,12 +32,12 @@ WIREGUARD_URL=https://git.zx2c4.com/WireGuard/snapshot/WireGuard-$(WIREGUARD_VER
 
 #If we're building a specific image, automatically set the ARCH based on that.
 ARCHS := #Needed so ARCHS+=$(ARCH) expands $(ARCH) immediately, not recursively.
-ARM_TARGETS:=rpi3_img rpi3_zip rip3_zip_clean rpi3_img_clean chip_img chip_img_clean
+ARM_TARGETS:=rpi3_img rpi3_zip rpi3_img_clean rip3_zip_clean
 ifneq ($(filter $(ARM_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=arm64
 ARCHS+=$(ARCH)
 endif
-AMD64_TARGETS:=pc_img pc_img_clean
+AMD64_TARGETS:=pc_img pc_zip pc_img_clean pc_zip_clean
 ifneq ($(filter $(AMD64_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=amd64
 ARCHS+=$(ARCH)
@@ -129,7 +129,7 @@ FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
 
 #XXX Make sure the CROSS_PREFIX (or native) toolchain exists.
 #XXX new enough cross tools, u-boot-tools (mkenvimage), mtools, grub (EFI and pc),
-#    docker, xorriso, gpg2, etc.
+#    docker, syslinux, gpg2, etc.
 
 #Make sure binfmt is configured properly for cross-builds
 ifneq ($(shell echo '50c12d79f40fc1cacc4819ae9bac6bb1  /proc/sys/fs/binfmt_misc/qemu-arm' | \
@@ -542,8 +542,6 @@ IMG_DEPS += \
 	$(UBOOT_ENV) \
 	$(BOOTFW) \
 	$(CONFIG_TXT)
-else ifeq ($(ARCH), amd64)
-IMG_DEPS += $(SRCDIR)/pc/grub.cfg
 endif
 
 RPI3_IMG := $(IMAGESDIR)/rpi3image.bin
@@ -571,11 +569,11 @@ rpi3_zip_clean:
 
 PC_IMG := $(IMAGESDIR)/pcimage.bin
 pc_img: $(PC_IMG)
-$(PC_IMG): $(IMG_DEPS)
+$(PC_IMG): $(IMG_DEPS) $(SRCDIR)/pc/grub.cfg
 	@mkdir -p $(IMAGESDIR)
 	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
 	mkdir -p $(IMGFSDIR)/boot/grub
-	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
+	cp $(SRCDIR)/pc/grub.cfg $(IMGFSDIR)/boot/grub/
 	dd if=/dev/zero of=$(IMGFSDIR)/SPACER bs=4096 count=1024 #HACK to make room for apikey
 	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
 	@rm $(IMGFSDIR)/SPACER
@@ -584,20 +582,43 @@ PHONY += pc_img_clean
 pc_img_clean:
 	rm $(PC_IMG)
 
+PC_ZIP := $(IMAGESDIR)/pc.zip
+pc_zip: $(PC_ZIP)
+$(PC_ZIP): $(IMG_DEPS) $(SRCDIR)/pc/syslinux.cfg
+	@mkdir -p $(IMAGESDIR)
+	rm -f $(PC_ZIP)
+	cp -r $(filter-out $(IMGFSDIR)/%, $(IMG_DEPS)) $(IMGFSDIR)
+	mkdir -p $(IMGFSDIR)/EFI/boot
+	cp $(SRCDIR)/pc/syslinux.cfg /usr/lib/syslinux/modules/efi64/ldlinux.e64 $(IMGFSDIR)/EFI/boot/
+	cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi $(IMGFSDIR)/EFI/boot/bootx64.efi
+	( cd $(IMGFSDIR) && zip -r $(PC_ZIP) * -x pairingkey wifi.txt )
+
+PHONY += pc_zip_clean
+pc_zip_clean:
+	rm $(PC_ZIP)
+
+PHONY += img zip
 ifeq ($(ARCH:arm%=),)
 img: rpi3_img
+zip: rpi3_zip
 else ifeq ($(ARCH), amd64)
 img: pc_img
+zip: pc_zip
 endif
 
 ########################
 # Deploy images
 
 PHONY += deploy
+ifeq ($(ARCH:arm%=),)
 deploy: $(RPI3_ZIP)
 	@test $(SERVER)
 	scp $(RPI3_ZIP) root@$(SERVER):~/data/sslnginx/html/images/
-
+else ifeq ($(ARCH), amd64)
+deploy: $(PC_ZIP)
+	@test $(SERVER)
+	scp $(PC_ZIP) root@$(SERVER):~/data/sslnginx/html/images/
+endif
 ########################
 # Qemu emulation targets
 
