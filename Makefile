@@ -157,6 +157,7 @@ PHONY += clean
 clean: fs_clean initrd_clean
 	rm -rf $(BUILDDIR)
 
+PHONY += wireguard_src
 WIREGUARD_SRC := $(WIREGUARDDIR)/contrib/kernel-tree/create-patch.sh
 wireguard_src: $(WIREGUARD_SRC)
 $(WIREGUARD_SRC):
@@ -638,11 +639,11 @@ qemu-run: $(RPI3_IMG) $(TMP_USB_IMG)
 	  -kernel $(IMGFSDIR)/$(KERNEL_IMG) -initrd $(INITRD) \
 	  -dtb $(IMGFSDIR)/bcm2837-rpi-3-b.dtb \
 	  -m 1024 -no-reboot -append "8250.nr_uarts=1 console=tty1 console=ttyAMA0,115200" \
-	  -drive file=$(RPI3_IMG),if=sd,format=raw -drive file=$(TMP_USB_IMG),if=virtio,format=raw
+	  -drive file=$(RPI3_IMG),if=sd,format=raw #-drive file=$(TMP_USB_IMG),if=virtio,format=raw
 else ifeq ($(ARCH), amd64)
 qemu-run: $(PC_IMG) $(TMP_USB_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
-	qemu-system-x86_64 -enable-kvm -nographic -m 2048 \
+	qemu-system-x86_64 -accel kvm:tcg -nographic -m 1024 \
 	  -hda $(PC_IMG) -hdb $(TMP_USB_IMG)
 endif
 PHONY += qemu-run
