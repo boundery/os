@@ -51,7 +51,6 @@ KERNEL_IMG=zImage
 KERNEL_EXTRAS=dtbs
 UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
-BOOT_MNT=/dev/mmcblk0p1
 CROSS_PREFIX=arm-linux-gnueabihf-
 FROM_PREFIX=arm32v7/
 QEMU_ARCH=arm
@@ -61,7 +60,6 @@ KERNEL_IMG=Image
 KERNEL_EXTRAS=dtbs
 UBOOT_ARCH=arm
 UBOOT_IMG=u-boot.bin
-BOOT_MNT=/dev/mmcblk0p1
 CROSS_PREFIX=aarch64-linux-gnu-
 FROM_PREFIX=arm64v8/
 QEMU_ARCH=aarch64
@@ -69,7 +67,6 @@ else ifeq ($(ARCH), amd64)
 KERNEL_ARCH=x86
 KERNEL_IMG=bzImage
 KERNEL_EXTRAS=
-BOOT_MNT=LABEL=ISOLINUX
 CROSS_PREFIX=
 FROM_PREFIX=
 else
@@ -329,7 +326,6 @@ $(INITRD): $(INITRDSRCDIR)/*
 	@mkdir -p $(INITRDDIR)
 	docker build $(DOCKER_BUILD_PROXY) \
 	  --build-arg FROM_PREFIX=$(FROM_PREFIX) \
-	  --build-arg BOOT_MNT=$(BOOT_MNT) \
 	  -t $(FROM_PREFIX)initrd $(INITRDSRCDIR)
 	docker container create --name=$(shell echo $(FROM_PREFIX) | tr -d '/')initrd \
 	  $(FROM_PREFIX)initrd
@@ -354,8 +350,7 @@ initrd_clean:
 ROOTFS := $(IMGFSDIR)/layers/rootfs.layers
 rootfs: $(ROOTFS)
 $(ROOTFS): $(ROOTSRCDIR)/* $(SCRIPTDIR)/untar-docker-image
-	$(SCRIPTDIR)/mkcontainer -r \
-		-aARCH=$(ARCH) -aBOOT_MNT=$(BOOT_MNT) \
+	$(SCRIPTDIR)/mkcontainer -r -aARCH=$(ARCH) \
 		rootfs '$(FROM_PREFIX)' $(ROOTSRCDIR) \
 		$(FSDIR) \
 		$(IMGFSDIR)/layers \
@@ -582,7 +577,7 @@ $(PC_IMG): $(IMG_DEPS)
 	mkdir -p $(IMGFSDIR)/boot/grub
 	cp $(IMGFSDIR)/grub.cfg $(IMGFSDIR)/boot/grub/
 	dd if=/dev/zero of=$(IMGFSDIR)/SPACER bs=4096 count=1024 #HACK to make room for apikey
-	grub-mkrescue -volid $(subst LABEL=,,$(BOOT_MNT)) -o $(PC_IMG) $(IMGFSDIR)
+	grub-mkrescue -o $(PC_IMG) $(IMGFSDIR)
 	@rm $(IMGFSDIR)/SPACER
 
 PHONY += pc_img_clean

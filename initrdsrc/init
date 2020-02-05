@@ -8,7 +8,21 @@ sleep 2
 # and /boot for the new root image.
 mount /proc
 mount /dev
-mount /boot
+#Try all partitions until one has /layers/rootfs.layers
+for i in `egrep -o ' (mmcblk[0-9]+p[0-9]+|[sh]d[a-z]+[0-9]+)$' /proc/partitions`; do
+    #XXX Maybe check that it is fat/vfat/exfat before trying to mount?
+    if ! mount /dev/$i /boot; then
+        continue
+    fi
+    if [ -f /boot/layers/rootfs.layers ]; then
+        break
+    fi
+    umount /boot
+done
+if ! [ -f /boot/layers/rootfs.layers ]; then
+    echo "FAILED TO MOUNT /boot" >&2
+    exit 99
+fi
 
 # Switch to the real root.
 
@@ -49,4 +63,5 @@ mount --move /boot /newroot/boot
 # XXX debugging: leave old root visible under the new root
 #mount --bind / /newroot/mnt
 
+echo "initrd finished, switching roots"
 exec switch_root /newroot /sbin/init

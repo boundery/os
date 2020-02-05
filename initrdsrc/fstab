@@ -1,3 +1,2 @@
 proc             /proc       proc      nosuid,noexec,nodev
 devtmpfs         /dev        devtmpfs  nosuid,noexec
-XBOOT_MNTX   /boot       auto      ro

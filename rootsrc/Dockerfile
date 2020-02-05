@@ -3,7 +3,6 @@ ARG FROM_PREFIX
 FROM ${FROM_PREFIX}debian:stretch-slim
 
 ARG ARCH
-ARG BOOT_MNT
 
 COPY *.pub /keys/
 
@@ -45,7 +44,6 @@ RUN    apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY fstab mdev.conf /etc/
-RUN sed -i "s|XBOOT_MNTX|$BOOT_MNT|g" /etc/fstab
 COPY modules.${ARCH} /etc/modules
 COPY sethostname /etc/dhcp/dhclient-exit-hooks.d/
 COPY wpa_supplicant.conf /usr/local/etc/
