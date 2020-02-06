@@ -236,7 +236,6 @@ $(UBOOT_SRC):
 	  [ `echo "$${PIPESTATUS[@]}" | tr -s ' ' + | bc` -eq 0 ] || \
 	  ( rm -rf $(UBOOTDIR) && false )
 
-
 UBOOT_PATCH := $(UBOOTDIR)/.config
 uboot_patch: $(UBOOT_PATCH)
 $(UBOOT_PATCH): $(UBOOT_SRC) $(KCONFIGDIR)/$(ARCH)_uconfig
@@ -613,11 +612,11 @@ endif
 PHONY += deploy
 ifeq ($(ARCH:arm%=),)
 deploy: $(RPI3_ZIP)
-	@test $(SERVER)
+	@test $(SERVER) || ( echo 'set SERVER' && false)
 	scp $(RPI3_ZIP) root@$(SERVER):~/data/sslnginx/html/images/
 else ifeq ($(ARCH), amd64)
 deploy: $(PC_ZIP)
-	@test $(SERVER)
+	@test $(SERVER) || ( echo 'set SERVER' && false)
 	scp $(PC_ZIP) root@$(SERVER):~/data/sslnginx/html/images/
 endif
 ########################
