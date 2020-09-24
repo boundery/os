@@ -32,7 +32,7 @@ WIREGUARD_URL=https://git.zx2c4.com/WireGuard/snapshot/WireGuard-$(WIREGUARD_VER
 
 #If we're building a specific image, automatically set the ARCH based on that.
 ARCHS := #Needed so ARCHS+=$(ARCH) expands $(ARCH) immediately, not recursively.
-ARM_TARGETS:=rpi3_img rpi3_zip rpi3_img_clean rip3_zip_clean
+ARM_TARGETS:=rpi3_img rpi3_zip rpi3_img_clean rpi3_zip_clean
 ifneq ($(filter $(ARM_TARGETS), $(MAKECMDGOALS)),)
 override ARCH:=arm64
 ARCHS+=$(ARCH)
