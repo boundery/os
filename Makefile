@@ -132,8 +132,7 @@ FAKEROOT := $(SCRIPTDIR)/lockedfakeroot
 #    docker, syslinux, gpg2, etc.
 
 #Make sure binfmt is configured properly for cross-builds
-ifneq ($(shell echo '50c12d79f40fc1cacc4819ae9bac6bb1  /proc/sys/fs/binfmt_misc/qemu-arm' | \
-	md5sum -c --quiet; echo $$?),0)
+ifneq ($(shell echo 'int main(){}' | $(CROSS_PREFIX)gcc -x c -static -o $(BUILDDIR)/binfmt_test - && $(BUILDDIR)/binfmt_test; echo $$?),0)
 $(error Run "sudo script/qemu-arm-static.sh")
 endif
 
