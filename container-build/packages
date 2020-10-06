@@ -1,8 +1,10 @@
 bc
+bison
 build-essential
 cpio
 docker-ce-cli
 fakeroot
+flex
 g++-aarch64-linux-gnu
 gcc-aarch64-linux-gnu
 g++-arm-linux-gnueabihf
@@ -11,6 +13,7 @@ gnupg2
 grub-common
 kmod
 libelf-dev
+libssl-dev
 mtools
 qemu-system-x86
 qemu-user-static

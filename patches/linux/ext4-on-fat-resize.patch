@@ -1,30 +1,7 @@
-diff --git a/drivers/block/loop.c b/drivers/block/loop.c
-index f321b96..255d081 100644
---- a/drivers/block/loop.c
-+++ b/drivers/block/loop.c
-@@ -457,7 +457,7 @@ static void lo_complete_rq(struct request *rq)
- 		zero_fill_bio(bio);
- 	}
- 
--	blk_mq_end_request(rq, cmd->ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
-+	blk_mq_end_request(rq, cmd->ret == -EOPNOTSUPP ? BLK_STS_NOTSUPP : cmd->ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
- }
- 
- static void lo_rw_aio_complete(struct kiocb *iocb, long ret, long ret2)
-@@ -1695,7 +1695,7 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
-  failed:
- 	/* complete non-aio request */
- 	if (!cmd->use_aio || ret) {
--		cmd->ret = ret ? -EIO : 0;
-+		cmd->ret = ret == -EOPNOTSUPP ? ret : ret ? -EIO : 0;
- 		blk_mq_complete_request(cmd->rq);
- 	}
- }
-diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 035cd3f..87c91f7 100644
+diff -Naurp a/fs/ext4/resize.c b/fs/ext4/resize.c
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -45,6 +45,15 @@ int ext4_resize_begin(struct super_block *sb)
+@@ -74,6 +74,15 @@ int ext4_resize_begin(struct super_block
  		return -EPERM;
  	}
  
@@ -40,10 +17,7 @@ index 035cd3f..87c91f7 100644
  	if (test_and_set_bit_lock(EXT4_FLAGS_RESIZING,
  				  &EXT4_SB(sb)->s_ext4_flags))
  		ret = -EBUSY;
-@@ -2015,10 +2024,11 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
- 		free_flex_gd(flex_gd);
- 	if (resize_inode != NULL)
- 		iput(resize_inode);
+@@ -2096,7 +2105,8 @@ out:
  	if (err)
  		ext4_warning(sb, "error (%d) occurred during "
  			     "file system resize", err);
@@ -54,14 +28,13 @@ index 035cd3f..87c91f7 100644
 +			 n_blocks_count);
  	return err;
  }
-diff --git a/fs/fat/file.c b/fs/fat/file.c
-index 4724cc9..126cc3c 100644
+diff -Naurp a/fs/fat/file.c b/fs/fat/file.c
 --- a/fs/fat/file.c
 +++ b/fs/fat/file.c
-@@ -181,7 +181,7 @@ const struct file_operations fat_file_operations = {
- #endif
+@@ -210,7 +210,7 @@ const struct file_operations fat_file_op
  	.fsync		= fat_file_fsync,
  	.splice_read	= generic_file_splice_read,
+ 	.splice_write	= iter_file_splice_write,
 -	.fallocate	= fat_fallocate,
 +	//.fallocate	= fat_fallocate,
  };

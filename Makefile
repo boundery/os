@@ -14,18 +14,16 @@ SHELL=/bin/bash #tarfile signature checking uses process redirection.
 
 DEBIAN_RELEASE := stretch
 
-KERNEL_VERSION = 4.14.136
-UBOOT_VERSION = 2017.11
-BOOTFW_VERSION = 1.20170811
+KERNEL_VERSION = 5.8.13
+UBOOT_VERSION = 2020.10
+BOOTFW_VERSION = 1.20200902
 BUSYBOX_VERSION = 1.28.0-uclibc
 ZEROTIER1_VERSION = 1.2.12
-WIREGUARD_VERSION = 0.0.20191012
 
-KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$(KERNEL_VERSION).tar.xz
+KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v5.x/linux-$(KERNEL_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-$(UBOOT_VERSION).tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
 ZEROTIER1_URL=http://github.com/zerotier/ZeroTierOne/archive/$(ZEROTIER1_VERSION).tar.gz
-WIREGUARD_URL=https://git.zx2c4.com/WireGuard/snapshot/WireGuard-$(WIREGUARD_VERSION).tar.xz
 
 ######################################################
 # Pick/validate what target architectures we're building for.
@@ -113,7 +111,6 @@ FSDIR := $(BUILDDIR)/fs
 OSFSDIR := $(FSDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
 ZEROTIER1DIR := $(BUILDDIR)/zerotier-one
-WIREGUARDDIR := $(BUILDDIR)/WireGuard
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
 
@@ -156,24 +153,6 @@ PHONY += clean
 clean: fs_clean initrd_clean
 	rm -rf $(BUILDDIR)
 
-PHONY += wireguard_src
-WIREGUARD_SRC := $(WIREGUARDDIR)/contrib/kernel-tree/create-patch.sh
-wireguard_src: $(WIREGUARD_SRC)
-$(WIREGUARD_SRC):
-	@mkdir -p $(WIREGUARDDIR)
-	wget -qO- $(WIREGUARD_URL) | xz -cd | \
-	  tee >(tar --strip-components=1 -x -C $(WIREGUARDDIR)) | \
-	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
-	  --verify $(SIGDIR)/WireGuard-$(WIREGUARD_VERSION).tar.asc - && \
-	  [ `echo "$${PIPESTATUS[@]}" | tr -s ' ' + | bc` -eq 0 ] || \
-	  ( rm -rf $(WIREGUARDDIR) && false )
-
-PHONY += wireguard_patch
-WIREGUARD_PATCH := $(PATCHDIR)/linux/wireguard.patch
-wireguard_patch: $(WIREGUARD_PATCH)
-$(WIREGUARD_PATCH): $(WIREGUARD_SRC)
-	$(WIREGUARD_SRC) > $(WIREGUARD_PATCH)
-
 KERNEL_SRC := $(KERNELDIR)/Makefile
 kernel_src: $(KERNEL_SRC)
 $(KERNEL_SRC):
@@ -200,9 +179,11 @@ $(KERNEL): $(KERNEL_PATCH)
 
 ifeq ($(ARCH:arm%=),)
 ifeq ($(ARCH),armhf)
-KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2837-rpi-3-b.dtb
+KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2837-rpi-3-b.dtb \
+	      $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2711-rpi-4-b.dtb
 else
-KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom/bcm2837-rpi-3-b.dtb
+KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom/bcm2837-rpi-3-b.dtb \
+	      $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom/bcm2711-rpi-4-b.dtb
 endif
 kernel_dtb: $(KERNEL_DTB)
 $(KERNEL_DTB): $(KERNEL)
@@ -266,7 +247,9 @@ BOOTFW := \
 	$(BOOTFWDIR)/bcm2710-rpi-cm3.dtb \
 	$(BOOTFWDIR)/bootcode.bin \
 	$(BOOTFWDIR)/start.elf \
-	$(BOOTFWDIR)/fixup.dat
+	$(BOOTFWDIR)/start4.elf \
+	$(BOOTFWDIR)/fixup.dat \
+	$(BOOTFWDIR)/fixup4.dat
 bootfw: $(BOOTFW)
 $(BOOTFW): $(BOOTFW_SRC)
 
