@@ -1,7 +1,7 @@
 # Raspberry Pi 3/4 boot configuration
 
 # 64-bit mode
-arm_control=0x200
+arm_64bit=1
 
 enable_uart=1
 
