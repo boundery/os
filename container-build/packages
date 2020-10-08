@@ -8,6 +8,7 @@ g++-aarch64-linux-gnu
 gnupg2
 kmod
 libelf-dev
+mtools
 qemu-user-static
 rsync
 squashfs-tools
