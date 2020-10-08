@@ -15,12 +15,14 @@ SHELL=/bin/bash #tarfile signature checking uses process redirection.
 DEBIAN_RELEASE := stretch
 
 KERNEL_VERSION = 5.8.13
+FIRMWARE_VERSION = 20200918
 UBOOT_VERSION = 2020.10
 BOOTFW_VERSION = 1.20200902
 BUSYBOX_VERSION = 1.28.0-uclibc
 ZEROTIER1_VERSION = 1.2.12
 
 KERNEL_URL=http://cdn.kernel.org/pub/linux/kernel/v5.x/linux-$(KERNEL_VERSION).tar.xz
+FIRMWARE_URL=https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-$(FIRMWARE_VERSION).tar.xz
 UBOOT_URL=http://ftp.denx.de/pub/u-boot/u-boot-$(UBOOT_VERSION).tar.bz2
 BOOTFW_URL=http://github.com/raspberrypi/firmware/archive/$(BOOTFW_VERSION).tar.gz
 ZEROTIER1_URL=http://github.com/zerotier/ZeroTierOne/archive/$(ZEROTIER1_VERSION).tar.gz
@@ -110,6 +112,7 @@ INITRDDIR := $(BUILDDIR)/initrd
 FSDIR := $(BUILDDIR)/fs
 OSFSDIR := $(FSDIR)/rootfs
 KERNELDIR := $(BUILDDIR)/linux
+FIRMWAREDIR := $(BUILDDIR)/firmware
 ZEROTIER1DIR := $(BUILDDIR)/zerotier-one
 IMGFSDIR := $(BUILDDIR)/imgfs
 IMAGESDIR := $(BUILDDIR)/images
@@ -203,6 +206,41 @@ $(KERNEL_MOD_INSTALL): $(KERNEL) # see below for additional deps
 PHONY += kernel_clean
 kernel_clean:
 	rm -rf $(KERNELDIR)
+
+FIRMWARE_SRC := $(FIRMWAREDIR)/Makefile
+firmware_src: $(FIRMWARE_SRC)
+$(FIRMWARE_SRC):
+	@mkdir -p $(FIRMWAREDIR)
+	wget -qO- $(FIRMWARE_URL) | xz -cd | \
+	  tee >(tar --strip-components=1 -x -C $(FIRMWAREDIR)) | \
+	  gpg2 --no-default-keyring --keyring $(SIGDIR)/pubring.gpg \
+	  --verify $(SIGDIR)/linux-firmware-$(FIRMWARE_VERSION).tar.sign - && \
+	  [ `echo "$${PIPESTATUS[@]}" | tr -s ' ' + | bc` -eq 0 ] || \
+	  ( rm -rf $(FIRMWAREDIR) && false )
+
+ifeq ($(ARCH:arm%=),)
+FIRMWARE := \
+	$(FIRMWAREDIR)/brcm/brcmfmac43430-sdio.bin \
+	$(FIRMWAREDIR)/brcm/brcmfmac43430-sdio.raspberrypi,3-model-b.txt \
+	$(FIRMWAREDIR)/brcm/brcmfmac43455-sdio.bin \
+	$(FIRMWAREDIR)/brcm/brcmfmac43455-sdio.raspberrypi,3-model-b-plus.txt \
+	$(FIRMWAREDIR)/brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.txt
+
+endif
+firmware: $(FIRMWARE)
+ifneq ($(FIRMWARE),)
+$(FIRMWARE): $(FIRMWARE_SRC)
+endif
+
+FIRMWARE_INSTALL := $(FIRMWARE:$(FIRMWAREDIR)/%=$(OSFSDIR)/lib/firmware/%)
+firmware_install: $(FIRMWARE_INSTALL)
+$(FIRMWARE_INSTALL): $(OSFSDIR)/lib/firmware/%: $(FIRMWAREDIR)/%
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+PHONY += firmware_clean
+firmware_clean:
+	rm -rf $(FIRMWAREDIR)
 
 ifeq ($(ARCH:arm%=),) # {
 
@@ -348,6 +386,7 @@ endif
 CONTAINERS += $(ROOTFS)
 
 $(KERNEL_MOD_INSTALL): $(ROOTFS)
+$(FIRMWARE_INSTALL): $(ROOTFS)
 
 PHONY += rootfs_clean
 rootfs_clean:
@@ -497,7 +536,7 @@ fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean \
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs
 squashfs: $(SQUASHFS)
-$(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL)
+$(SQUASHFS): $(CONTAINERS) $(KERNEL_MOD_INSTALL) $(FIRMWARE_INSTALL)
 	@rm -rf $(IMGFSDIR)/layers/fs.sqfs
 	mkdir -p $(IMGFSDIR)/layers/fs
 	$(FAKEROOT) $(FSDIR).fakeroot \
