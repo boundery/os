@@ -641,7 +641,7 @@ qemu-run: $(RPI3_IMG) $(TMP_USB_IMG)
 else ifeq ($(ARCH), amd64)
 qemu-run: $(PC_IMG) $(TMP_USB_IMG)
 	@echo -e "\nctrl-a x to exit qemu\n"
-	qemu-system-x86_64 -accel kvm:tcg -nographic -m 1024 \
+	qemu-system-x86_64 -machine pc,accel=kvm:tcg -nographic -m 1024 \
 	  -hda $(PC_IMG) -hdb $(TMP_USB_IMG)
 endif
 PHONY += qemu-run
