@@ -21,6 +21,8 @@ for i in `egrep -o ' (mmcblk[0-9]+p[0-9]+|[sh]d[a-z]+[0-9]+)$' /proc/partitions`
 done
 if ! [ -f /boot/layers/rootfs.layers ]; then
     echo "FAILED TO MOUNT /boot" >&2
+    # drop into shell
+    setsid -c /bin/sh -l
     exit 99
 fi
 
