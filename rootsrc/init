@@ -64,6 +64,21 @@ else
     usbstore=1
 fi
 
+if [ -f /boot/INSECURE_DEBUG ]; then
+    #For the automated tests, fetch pebble's current root certificate and add it to the store.
+    #The signal that we're in the test env is that it is a VBox VM with 1025MB of RAM.
+    if grep -q 'innotek GmbH' /sys/firmware/dmi/tables/DMI ; then
+        if [ "`dmesg | grep 'totalpages:' | cut -d':' -f2`" -eq 262154 ]; then
+            while ! ping -c1 -W1 acme-v02.api.letsencrypt.org; do
+                echo "Waiting for network, to get pebble root cert."
+            done
+            bash -c 'cat </dev/tcp/acme-v02.api.letsencrypt.org/8080 >/tmp/fakeroot.crt'
+            mount --bind /tmp/fakeroot.crt /etc/ssl/certs/ca-certificates.crt
+            DOCKER_CERT='-v /tmp/fakeroot.crt:/etc/ssl/certs/ca-certificates.crt:ro'
+        fi
+    fi
+fi
+
 echo Starting zerotier
 chmod og+rw /dev/net/tun
 if [ -n "$usbstore" ]; then
@@ -74,7 +89,7 @@ else
     #XXX Need a scheme to handle this!
 fi
 docker run --rm -d --net=host \
-       --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun \
+       --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun $DOCKER_CERT \
        $MOUNT -v /boot/pairingkey:/pairingkey:ro --name zerotier zerotier /start private
 x="`docker exec zerotier python3 /zerotier_allow.py private`"
 ZTIF="${x%% *}"
@@ -85,7 +100,7 @@ if [ ! -s /boot/apikey ]; then
     mount -oremount,rw,force /boot
     rm -f /boot/SPACER
     touch /boot/apikey
-    docker run --rm -v /boot/apikey:/apikey \
+    docker run -v /boot/apikey:/apikey $DOCKER_CERT \
            -v /boot/pairingkey:/pairingkey:ro \
            --name registration registration \
            python3 ./register.py "https://boundery.me" $BOOTSTRAP_IPV6 &
@@ -126,8 +141,8 @@ while [ ! -s /boot/apikey ]; do
     n=$(($n - 1))
     sleep 5
 done
-mount -oremount,ro /boot
 sync -f /boot/apikey
+mount -oremount,ro /boot #XXX Says /boot is busy!
 APIKEY=`cat /boot/apikey`
 if [ -z "$APIKEY" ]; then
     echo "Failed to get APIKEY"
@@ -138,7 +153,7 @@ fi
 #    muddle on, and patch it up later if/when we do?
 echo Starting app store
 mkdir -p /mnt/vol00/sysdata/appstore/data
-docker container create -t -v /mnt/vol00/sysdata/appstore/data:/data \
+docker container create -t $DOCKER_CERT -v /mnt/vol00/sysdata/appstore/data:/data \
        -v /mnt/vol00/appcerts:/mnt/vol00/appcerts \
        -v /mnt/vol00/apps:/mnt/vol00/apps \
        -v /var/run/docker.sock:/var/run/docker.sock \
