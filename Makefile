@@ -182,14 +182,20 @@ $(KERNEL): $(KERNEL_PATCH)
 
 ifeq ($(ARCH:arm%=),)
 ifeq ($(ARCH),armhf)
-KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2837-rpi-3-b.dtb \
-	      $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/bcm2711-rpi-4-b.dtb
+KERNEL_DTB := $(IMGFSDIR)/bcm2837-rpi-3-b-linux.dtb \
+	      $(IMGFSDIR)/bcm2837-rpi-3-b-plus-linux.dtb \
+	      $(IMGFSDIR)/bcm2837-rpi-cm3-io3-linux.dtb
+KERNEL_DTB_DIR := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts
 else
-KERNEL_DTB := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom/bcm2837-rpi-3-b.dtb \
-	      $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom/bcm2711-rpi-4-b.dtb
+KERNEL_DTB := $(IMGFSDIR)/bcm2837-rpi-3-b-linux.dtb \
+	      $(IMGFSDIR)/bcm2837-rpi-3-b-plus-linux.dtb \
+	      $(IMGFSDIR)/bcm2837-rpi-cm3-io3-linux.dtb \
+	      $(IMGFSDIR)/bcm2711-rpi-4-b-linux.dtb
+KERNEL_DTB_DIR := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom
 endif
 kernel_dtb: $(KERNEL_DTB)
-$(KERNEL_DTB): $(KERNEL)
+$(KERNEL_DTB): $(IMGFSDIR)/%-linux.dtb: $(KERNEL_DTB_DIR)/%.dtb $(KERNEL)
+	cp $< $@
 endif
 
 KERNEL_MOD_INSTALL := $(OSFSDIR)/lib/modules/$(KERNEL_VERSION)/modules.symbols
@@ -282,12 +288,18 @@ $(BOOTFW_SRC):
 
 BOOTFW := \
 	$(BOOTFWDIR)/bcm2710-rpi-3-b.dtb \
+	$(BOOTFWDIR)/bcm2710-rpi-3-b-plus.dtb \
 	$(BOOTFWDIR)/bcm2710-rpi-cm3.dtb \
 	$(BOOTFWDIR)/bootcode.bin \
 	$(BOOTFWDIR)/start.elf \
+	$(BOOTFWDIR)/fixup.dat
+ifeq ($(ARCH:arm64=),)
+BOOTFW := \
+	$(BOOTFWDIR)/bcm2711-rpi-4-b.dtb \
 	$(BOOTFWDIR)/start4.elf \
-	$(BOOTFWDIR)/fixup.dat \
-	$(BOOTFWDIR)/fixup4.dat
+	$(BOOTFWDIR)/fixup4.dat \
+	$(BOOTFW)
+endif
 bootfw: $(BOOTFW)
 $(BOOTFW): $(BOOTFW_SRC)
 
