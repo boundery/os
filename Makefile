@@ -194,7 +194,8 @@ KERNEL_DTB := $(IMGFSDIR)/bcm2837-rpi-3-b-linux.dtb \
 KERNEL_DTB_DIR := $(KERNELDIR)/arch/$(KERNEL_ARCH)/boot/dts/broadcom
 endif
 kernel_dtb: $(KERNEL_DTB)
-$(KERNEL_DTB): $(IMGFSDIR)/%-linux.dtb: $(KERNEL_DTB_DIR)/%.dtb $(KERNEL)
+$(KERNEL_DTB:$(IMGFSDIR)%-linux.dtb=$(KERNEL_DTB_DIR)%.dtb): $(KERNEL)
+$(KERNEL_DTB): $(IMGFSDIR)/%-linux.dtb: $(KERNEL_DTB_DIR)/%.dtb
 	cp $< $@
 endif
 
