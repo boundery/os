@@ -3,6 +3,7 @@
 import argparse
 import os
 import errno
+import mmap
 import re
 import subprocess
 import syslog
@@ -310,7 +311,8 @@ def makebuffer(filesize, blocksize):
         log.error("file size %s must be between 1 and 4000MiB" % (filesize))
         return None, None, None
     nblocks = int((filesize + (blocksize - 1)) / blocksize)
-    buf = [bytes(256 * 1024)] * (4 * blocksize)
+    # mmap for page-alignment since O_DIRECT needs buf alignment on some fs
+    buf = [mmap.mmap(-1, 256 * 1024)] * (4 * blocksize)
     bufsize = 1048576 * blocksize
     nbytes = bufsize * nblocks
     return buf, bufsize, nbytes
