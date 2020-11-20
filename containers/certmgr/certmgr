@@ -113,11 +113,11 @@ def newcert(domain):
         d = "/etc/letsencrypt/live/" + domain
         if 'fullchain' in opts:
             shutil.copy(d + "/fullchain.pem", opts.fullchain)
-            os.chmod(opts.privkey, stat.S_IRUSR)
+            os.chmod(opts.fullchain, stat.S_IRUSR)
         else:
             with open(d + "/fullchain.pem") as f:
                 cert = f.read()
-        if 'fullchain' in opts:
+        if 'privkey' in opts:
             shutil.copy(d + "/privkey.pem", opts.privkey)
             os.chmod(opts.privkey, stat.S_IRUSR)
         else:

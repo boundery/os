@@ -90,6 +90,7 @@ def get_cert(domain, keydir):
     out = d.containers.run(command=[ 'certmgr',
                                          '--fullchain', '/keys/fullchain.pem',
                                          '--privkey', '/keys/privkey.pem',
+                                         '--daemon',
                                          "renew" if renew else "new", domain, ],
                                 image='certmgr', network='dnsdcontrol',
                                 stdout=True, stderr=True, auto_remove=True,
