@@ -32,6 +32,11 @@ done </etc/modules
 
 (netd &)
 
+# try to start sshd if the sshd layer was mounted by initrd
+if which startsshd &>/dev/null; then
+    startsshd
+fi
+
 # Bring up mdev to run storage manager
 mkdir -p /tmp/lvm/etc
 cp /etc/lvm/lvm.conf /tmp/lvm/etc

@@ -1,0 +1,123 @@
+#!/bin/sh
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+#
+# Constants
+#
+
+SSH_AUTHORIZED_KEYS_PATH=/boot/ssh_authorized_keys
+SSH_HOST_KEY_PATH=/boot/ssh_host_rsa_key
+
+#
+# Global variables
+#
+
+progname="${0##*/}"
+
+#
+# Main
+#
+
+main() {
+    parseargs "$@" || return 99
+
+    if ! [ -f "$SSH_AUTHORIZED_KEYS_PATH" ]; then
+        verbose "Authorized keys file $SSH_AUTHORIZED_KEYS_PATH not found; exiting"
+        exit 0
+    fi
+
+    if ! [ -f "$SSH_HOST_KEY_PATH" ]; then
+        info "Generating host key $SSH_HOST_KEY_PATH"
+        if ! dropbearkey -t rsa -s 2048 -f "$SSH_HOST_KEY_PATH"; then
+            error "Error generating host key $SSH_HOST_KEY_PATH"
+            exit 1
+        fi
+        sync -f "$SSH_HOST_KEY_PATH"
+    fi
+
+    dropbear_flags=
+    [ "$dflag" ] && dropbear_flags="${dropbear_flags} -FE"
+
+    info "Starting sshd"
+    dropbear -sm $dropbear_flags
+}
+
+parseargs() {
+    while getopts dqv opt; do
+        case $opt in
+        (d)
+            dflag=1
+            ;;
+        (q)
+            qflag=1
+            ;;
+        (v)
+            vflag=1
+            ;;
+        (\?)
+            usage
+            return 1
+            ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
+    # just ignore the rest of argv
+
+    return 0
+}
+
+usage() {
+    {
+    echo "Usage: $progname [-dkn]"
+    echo "Start SSH server if $SSH_AUTHORIZED_KEYS_PATH is present."
+    echo "Generate RSA host key at $SSH_HOST_KEY_PATH if necessary."
+    echo
+    echo "    -d   debug, run in foreground, log to stdout, log more"
+    echo "    -q   quiet, log less"
+    echo "    -v   verbose, log more"
+    } >&2
+}
+
+#
+# Logging and debugging
+#
+
+log() {
+    local prio="$1"
+    shift
+
+    if [ "$dflag" ]; then
+        echo "$*"
+        return
+    fi
+    logger -pdaemon."$prio" -t"$progname" "$*"
+}
+
+error() {
+    log err "$@"
+}
+
+warning() {
+    log warning "$@"
+}
+
+info() {
+    [ "$qflag" ] || log info "$@"
+}
+
+debug() {
+    [ "$dflag" ] && log debug "$@"
+}
+
+verbose() {
+    [ "$vflag" ] && log info "$@"
+}
+
+
+#
+# Run
+#
+
+main "$@"
+exit $?

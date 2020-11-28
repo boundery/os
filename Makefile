@@ -541,10 +541,26 @@ registration_clean:
 	$(SCRIPTDIR)/mkcontainer -c registration '$(FROM_PREFIX)' \
 	  $(FSDIR) $(IMGFSDIR)/layers
 
+SSHD := $(IMGFSDIR)/layers/sshd.off
+sshd: $(SSHD)
+$(SSHD): $(CONTAINERDIR)/sshd/* $(SCRIPTDIR)/untar-docker-image
+	$(SCRIPTDIR)/mkcontainer -t sshd '$(FROM_PREFIX)' \
+		$(CONTAINERDIR)/sshd \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers \
+		'$(DOCKER_BUILD_PROXY)'
+CONTAINERS += $(SSHD)
+
+PHONY += sshd_clean
+sshd_clean:
+	$(SCRIPTDIR)/mkcontainer -c sshd '$(FROM_PREFIX)' \
+		$(FSDIR) \
+		$(IMGFSDIR)/layers
+
 PHONY += fs_clean
 fs_clean: rootfs_clean python3_clean storagemgr_clean zerotier_clean \
           haproxy_clean dnsd_clean certmgr_clean web_clean appstore_clean \
-	  registration_clean
+	  registration_clean sshd_clean
 	rm -rf $(FSDIR) $(FSDIR).fakeroot
 
 SQUASHFS := $(IMGFSDIR)/layers/fs.sqfs

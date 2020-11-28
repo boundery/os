@@ -43,6 +43,9 @@ add_layers() {
 }
 
 add_layers rootfs
+if [ -f /boot/ssh_authorized_keys ]; then
+    add_layers sshd
+fi
 # XXX debugging: add more layers
 #add_layers python3
 #add_layers storagemgr
