@@ -5,7 +5,6 @@ import dnslib as dl
 import dnslib.server as ds
 import socketserver as ss
 import json
-import requests
 import socket
 import threading
 import syslog

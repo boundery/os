@@ -11,6 +11,7 @@ mount /dev
 #Try all partitions until one has /layers/rootfs.layers
 for i in `egrep -o ' (mmcblk[0-9]+p[0-9]+|[sh]d[a-z]+[0-9]+)$' /proc/partitions`; do
     #XXX Maybe check that it is fat/vfat/exfat before trying to mount?
+    #XXX Mount read-only
     if ! mount /dev/$i /boot; then
         continue
     fi
