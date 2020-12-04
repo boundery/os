@@ -33,7 +33,7 @@ done </etc/modules
 (netd &)
 
 # try to start sshd if the sshd layer was mounted by initrd
-if which startsshd &>/dev/null; then
+if which startsshd >/dev/null 2>&1; then
     startsshd
 fi
 
