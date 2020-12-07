@@ -6,9 +6,10 @@ buildargs=
 cflag=
 rflag=
 tflag=
+Sflag=
 
 main() {
-    while getopts a:crt opt; do
+    while getopts a:crSt opt; do
         case $opt in
 	(a)
             buildargs="$buildargs --build-arg $OPTARG"
@@ -18,6 +19,9 @@ main() {
             ;;
         (r)
             rflag=1
+            ;;
+        (S)
+            Sflag=1
             ;;
         (t)
             tflag=1
@@ -47,6 +51,7 @@ usage() {
     echo "          -a   pass --build-arg name=value to docker build"
     echo "          -r   rename layer from hash to container name"
     echo "          -t   save tar fragments"
+    echo "          -S   deny shadowing files from the base layer"
     echo "  $progname -c name from-prefix fs-dir layers-dir"
     echo "      clean up container"
     } >&2
@@ -87,12 +92,31 @@ build () {
     mkdir -p $fsdir $layersdir
     docker save $from_prefix$name | $fakeroot $untar $fsdir
 
+    if [ "$Sflag" ]; then
+        baselayer=$(head -n 1 $layersdir/$name.layers)
+        for layer in $(tail -n +2 $layersdir/$name.layers); do
+            shadows=$(layer_shadows $baselayer $layer | sed -e '\,^var/lib/apt/,d' -e '\,^var/lib/dpkg/,d')
+            if [ -n "$shadows" ]; then
+                echo "$progname: Error: Layer $layer shadows files in base layer $baselayer:"
+                echo "$shadows"
+                rm -f $layersdir/$name.*
+                exit 1
+            fi
+        done
+    fi
+
     if [ "$rflag" ]; then
         layer=$(tail -1 $layersdir/$name.layers)
         echo "$progname: Renaming layer $layer to $name"
         mv $fsdir/$layer $fsdir/$name
         sed -i "\$s/.*/$name/" $layersdir/$name.layers
     fi
+}
+
+layer_shadows() {
+    find $fsdir/$1 $fsdir/$2 -type f -printf '%P\n' |
+        sort | uniq -c |
+        sed -n -e 's/^[[:space:]]*[2-9][0-9]* //p'
 }
 
 clean() {

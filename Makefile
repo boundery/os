@@ -544,7 +544,7 @@ registration_clean:
 SSHD := $(IMGFSDIR)/layers/sshd.off
 sshd: $(SSHD)
 $(SSHD): $(CONTAINERDIR)/sshd/* $(SCRIPTDIR)/untar-docker-image
-	$(SCRIPTDIR)/mkcontainer -t sshd '$(FROM_PREFIX)' \
+	$(SCRIPTDIR)/mkcontainer -St sshd '$(FROM_PREFIX)' \
 		$(CONTAINERDIR)/sshd \
 		$(FSDIR) \
 		$(IMGFSDIR)/layers \
