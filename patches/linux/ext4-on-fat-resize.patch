@@ -17,7 +17,7 @@ diff -Naurp a/fs/ext4/resize.c b/fs/ext4/resize.c
  	if (test_and_set_bit_lock(EXT4_FLAGS_RESIZING,
  				  &EXT4_SB(sb)->s_ext4_flags))
  		ret = -EBUSY;
-@@ -2096,7 +2105,8 @@ out:
+@@ -2098,7 +2107,8 @@ out:
  	if (err)
  		ext4_warning(sb, "error (%d) occurred during "
  			     "file system resize", err);
